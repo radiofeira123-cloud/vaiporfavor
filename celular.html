@@ -9,6 +9,7 @@
   button{font-size:24px;padding:20px 40px;margin:10px;border:none;border-radius:8px;cursor:pointer}
   #count{font-size:64px;margin-top:20px}
   #status{margin-top:10px;font-size:20px}
+  video{width:100%;max-width:400px;border-radius:8px;margin-top:20px}
 </style>
 </head>
 <body>
@@ -21,7 +22,10 @@
   <div id="step3" style="display:none">
     <div id="count"></div>
     <div id="status"></div>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
   </div>
+
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
 const DEFAULT_SOCKET_SERVER="https://render-9ea7.onrender.com";
@@ -30,12 +34,70 @@ const session=params.get('session')||('ctrl_'+Date.now());
 const socketServer=(params.get('socket')||DEFAULT_SOCKET_SERVER).replace(/\/$/,'');
 let socket=null;let awaiting=null;
 
-function enterFullscreen(){const el=document.documentElement;if(el.requestFullscreen)el.requestFullscreen();if(screen.orientation&&screen.orientation.lock){screen.orientation.lock('landscape').catch(()=>{});}}
-async function startSequence(){document.getElementById('step2').style.display='none';document.getElementById('step3').style.display='block';const delays=[10,5,5];for(let i=0;i<3;i++){await countdown(delays[i],'Foto '+(i+1));document.getElementById('status').innerText='Fotografia sendo capturada...';socket.emit('controller:take-photo',{i});await new Promise(res=>awaiting=res);document.getElementById('status').innerText='Foto '+(i+1)+' capturada';await sleep(500);}document.getElementById('status').innerText='Sessão concluída';}
-function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
-function countdown(sec,msg){return new Promise(r=>{let s=sec;const el=document.getElementById('count');el.innerText=msg+' '+s;const t=setInterval(()=>{s--;el.innerText=msg+' '+s;if(s<=0){clearInterval(t);r();}},1000);});}
-function initSocket(){socket=io(socketServer,{query:{session,role:'controller'}});socket.on('pc:photo',()=>{if(awaiting){awaiting();awaiting=null;}});socket.on('pc:reset',()=>{document.getElementById('step3').style.display='none';document.getElementById('step2').style.display='block';document.getElementById('count').innerText='';document.getElementById('status').innerText='Sessão reiniciada';});}
-document.getElementById('fullscreenBtn').onclick=()=>{enterFullscreen();document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='block';};
-document.getElementById('startSessionBtn').onclick=()=>{initSocket();startSequence();};
+function enterFullscreen(){
+  const el=document.documentElement;
+  if(el.requestFullscreen) el.requestFullscreen();
+  if(screen.orientation&&screen.orientation.lock){
+    screen.orientation.lock('landscape').catch(()=>{});
+  }
+}
+
+document.getElementById("fullscreenBtn").onclick=()=>{
+  enterFullscreen();
+  document.getElementById("step1").style.display="none";
+  document.getElementById("step2").style.display="block";
+};
+
+document.getElementById("startSessionBtn").onclick=()=>{
+  socket=io(socketServer,{transports:["websocket"]});
+  socket.on("connect",()=>{
+    socket.emit("join",{session});
+    document.getElementById("status").innerText="Conectado!";
+    document.getElementById("step2").style.display="none";
+    document.getElementById("step3").style.display="block";
+    startCamera();
+  });
+
+  socket.on("triggerPhoto",()=>{
+    startSequence();
+  });
+};
+
+function startCamera(){
+  const videoEl=document.getElementById("video");
+  navigator.mediaDevices.getUserMedia({ video:true }).then(stream=>{
+    videoEl.srcObject=stream;
+  }).catch(err=>{
+    document.getElementById("status").innerText="Erro ao abrir câmera: "+err;
+  });
+}
+
+async function startSequence(){
+  let count=3;
+  document.getElementById("count").innerText=count;
+  const interval=setInterval(()=>{
+    count--;
+    if(count>0){
+      document.getElementById("count").innerText=count;
+    }else{
+      clearInterval(interval);
+      document.getElementById("count").innerText="";
+      captureAndSend();
+    }
+  },1000);
+}
+
+function captureAndSend(){
+  const videoEl=document.getElementById("video");
+  const canvasEl=document.getElementById("canvas");
+  const ctx=canvasEl.getContext("2d");
+  canvasEl.width=videoEl.videoWidth;
+  canvasEl.height=videoEl.videoHeight;
+  ctx.drawImage(videoEl,0,0);
+  const dataURL=canvasEl.toDataURL("image/jpeg");
+  socket.emit("photo",{session,dataURL});
+  document.getElementById("status").innerText="📸 Foto enviada!";
+}
 </script>
-</body></html>
+</body>
+</html>
