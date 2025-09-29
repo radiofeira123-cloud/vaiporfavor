@@ -13,6 +13,7 @@
   #fullscreenView { position: fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.9); display:none; align-items:center; justify-content:center; }
   #fullscreenView img { max-width:90%; max-height:90%; }
   #fullscreenView button { position:absolute; top:20px; right:20px; font-size:24px; background:#fff; border:none; cursor:pointer; }
+  #qrcode { margin-top:20px; }
 </style>
 </head>
 <body>
@@ -24,6 +25,7 @@
   <button id="generateViewerLink">Gerar visualizador</button>
   <button id="resetBtn">Reiniciar sessão</button>
 </div>
+<div id="qrcode"></div>
 <div id="gallery"></div>
 
 <div id="fullscreenView">
@@ -81,10 +83,14 @@ document.getElementById("resetBtn").onclick=()=>{
 };
 
 function showQR(url){
-  const w=window.open("","_blank","width=400,height=400");
-  w.document.write("<h3>Escaneie o QR Code:</h3><div id='qrcode'></div><p>"+url+"</p>");
-  w.document.close();
-  new QRCode(w.document.getElementById("qrcode"),url);
+  const qrDiv = document.getElementById("qrcode");
+  qrDiv.innerHTML = ""; // limpa antes
+  QRCode.toCanvas(document.createElement("canvas"), url, function (err, canvas) {
+    if (!err) qrDiv.appendChild(canvas);
+  });
+  const link = document.createElement("p");
+  link.innerHTML = `<a href="${url}" target="_blank" style="color:#0bf">${url}</a>`;
+  qrDiv.appendChild(link);
 }
 </script>
 </body>
