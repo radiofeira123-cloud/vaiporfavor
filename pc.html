@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Photobooth — PC</title>
 <style>
-  body { font-family: Arial, sans-serif; margin: 16px; }
-  video { background: #000; width: 720px; height: 540px; display: block; border-radius: 6px; }
+  body { font-family: Arial, sans-serif; margin: 16px; background:#111; color:#fff; }
   #gallery { display: flex; flex-wrap: wrap; margin-top: 12px; }
   #gallery .photo-wrapper { position: relative; margin: 6px; }
   #gallery img { height: 120px; cursor: pointer; border-radius: 4px; }
@@ -19,47 +18,74 @@
 <body>
 <h1>Photobooth — PC</h1>
 <div>Session: <span id="session">—</span></div>
-<video id="video" autoplay playsinline muted></video>
-<div id="status">Câmera inativa</div>
+<div id="status">Aguardando fotos...</div>
 <div style="margin-top:10px">
-  <button id="startCam">Iniciar webcam</button>
-  <button id="stopCam">Parar webcam</button>
   <button id="generateControlUrl">Gerar link/QR do controle</button>
   <button id="generateViewerLink">Gerar visualizador</button>
   <button id="resetBtn">Reiniciar sessão</button>
 </div>
-<div id="qrcode" style="margin-top:10px"></div>
-<div id="controlUrl" style="margin-top:5px;font-size:14px;word-break:break-all;"></div>
 <div id="gallery"></div>
-<div id="viewerResult"></div>
 
 <div id="fullscreenView">
-  <button onclick="closeFullscreen()">X</button>
-  <img id="fullscreenImg" src=""/>
+  <button onclick="closeFullscreen()">✖</button>
+  <img id="fullscreenImg"/>
 </div>
 
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 <script>
-const DEFAULT_SOCKET_SERVER = "https://render-9ea7.onrender.com";
-const params = new URLSearchParams(location.search);
-const sessionId = params.get('session') || ('pc_' + Date.now());
-const socketServer = (params.get('socket') || DEFAULT_SOCKET_SERVER).replace(/\/$/,'');
-document.getElementById('session').innerText = sessionId;
+const DEFAULT_SOCKET_SERVER="https://render-9ea7.onrender.com";
+const session='pc_'+Date.now();
+document.getElementById("session").innerText=session;
+let socket=io(DEFAULT_SOCKET_SERVER,{transports:["websocket"]});
 
-let mediaStream=null; const video=document.getElementById('video'); const statusDisplay=document.getElementById('status');
-async function initCamera(){try{mediaStream=await navigator.mediaDevices.getUserMedia({video:true});video.srcObject=mediaStream;statusDisplay.textContent='Câmera pronta';}catch(e){statusDisplay.textContent='Erro:'+e.message;}}
-function stopCamera(){if(mediaStream){mediaStream.getTracks().forEach(t=>t.stop());mediaStream=null;video.srcObject=null;statusDisplay.textContent='Webcam parada';}}
-function capturePhoto(){const c=document.createElement('canvas');c.width=video.videoWidth||640;c.height=video.videoHeight||480;c.getContext('2d').drawImage(video,0,0,c.width,c.height);return c.toDataURL('image/jpeg',0.9);}
-function addPhoto(dataUrl){const wrap=document.createElement('div');wrap.className='photo-wrapper';const img=document.createElement('img');img.src=dataUrl;img.onclick=()=>openFullscreen(dataUrl);const rm=document.createElement('button');rm.className='remove';rm.textContent='X';rm.onclick=()=>wrap.remove();wrap.appendChild(img);wrap.appendChild(rm);document.getElementById('gallery').appendChild(wrap);}
-function openFullscreen(src){document.getElementById('fullscreenImg').src=src;document.getElementById('fullscreenView').style.display='flex';}
-function closeFullscreen(){document.getElementById('fullscreenView').style.display='none';}
+socket.on("connect",()=>{
+  socket.emit("join",{session});
+  document.getElementById("status").innerText="Conectado — aguardando fotos...";
+});
 
-document.getElementById('startCam').onclick=initCamera; document.getElementById('stopCam').onclick=stopCamera;
+socket.on("photo",(msg)=>{
+  if(msg.session && msg.dataURL){
+    addPhoto(msg.dataURL);
+  }
+});
 
-const socket=io(socketServer,{query:{session:sessionId,role:'pc'}});
-socket.on('controller:take-photo',()=>{statusDisplay.textContent='Capturando...';const dataUrl=capturePhoto();addPhoto(dataUrl);socket.emit('pc:photo',{dataUrl});statusDisplay.textContent='Foto capturada';});
-document.getElementById('generateControlUrl').onclick=()=>{const url=`${location.origin}/celular.html?session=${sessionId}&socket=${encodeURIComponent(socketServer)}`;const qr='https://api.qrserver.com/v1/create-qr-code/?size=200x200&data='+encodeURIComponent(url);document.getElementById('qrcode').innerHTML='<img src="'+qr+'"/>';document.getElementById('controlUrl').innerText=url;};
-document.getElementById('generateViewerLink').onclick=async()=>{try{const imgs=[...document.querySelectorAll('#gallery img')].map(i=>i.src);const uploaded=[];for(let u of imgs){const base64=u.split(',')[1];const r=await fetch(socketServer+'/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:base64})});const j=await r.json();if(!r.ok)throw new Error(j.error||'falha');uploaded.push(j.url);}const link=`${location.origin}/visualizador.html?photos=${encodeURIComponent(JSON.stringify(uploaded))}`;document.getElementById('viewerResult').innerHTML='<a href="'+link+'" target="_blank">Abrir Visualizador</a>';}catch(e){alert('Erro ao gerar visualizador: '+e.message);}};
-document.getElementById('resetBtn').onclick=()=>{document.getElementById('gallery').innerHTML='';document.getElementById('viewerResult').innerHTML='';socket.emit('pc:reset');statusDisplay.textContent='Sessão reiniciada';};
+function addPhoto(dataURL){
+  const wrapper=document.createElement("div");
+  wrapper.className="photo-wrapper";
+  const img=document.createElement("img");
+  img.src=dataURL;
+  img.onclick=()=>openFullscreen(dataURL);
+  wrapper.appendChild(img);
+  document.getElementById("gallery").appendChild(wrapper);
+}
+
+function openFullscreen(url){
+  document.getElementById("fullscreenImg").src=url;
+  document.getElementById("fullscreenView").style.display="flex";
+}
+function closeFullscreen(){
+  document.getElementById("fullscreenView").style.display="none";
+}
+
+document.getElementById("generateControlUrl").onclick=()=>{
+  const url=location.origin+"/celular.html?session="+session+"&socket="+DEFAULT_SOCKET_SERVER;
+  showQR(url);
+};
+document.getElementById("generateViewerLink").onclick=()=>{
+  const url=location.origin+"/visualizador.html?session="+session+"&socket="+DEFAULT_SOCKET_SERVER;
+  showQR(url);
+};
+document.getElementById("resetBtn").onclick=()=>{
+  location.reload();
+};
+
+function showQR(url){
+  const w=window.open("","_blank","width=400,height=400");
+  w.document.write("<h3>Escaneie o QR Code:</h3><div id='qrcode'></div><p>"+url+"</p>");
+  w.document.close();
+  new QRCode(w.document.getElementById("qrcode"),url);
+}
 </script>
-</body></html>
+</body>
+</html>
