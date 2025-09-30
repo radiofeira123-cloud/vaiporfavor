@@ -191,11 +191,34 @@ let photos = [];
 let templateImage = new Image();
 let templateLoaded = false;
 
-// COORDENADAS para 6000x3375 (VERTICAL)
+// COORDENADAS REAIS do image-map.net (3375x6000)
+// Convertidas das suas áreas:
+// Área 1: 149,2116,2523,576 → x1=149, y1=576, x2=2523, y2=2116
+// Área 2: 146,5429,2520,3888 → x1=146, y1=3888, x2=2520, y2=5429
+// Área 3: coordenadas complexas - vou usar aproximação
+
 const photoAreas = [
-  { number: 1, x: 446, y: 800, width: 800, height: 600 },
-  { number: 2, x: 446, y: 1600, width: 800, height: 600 },
-  { number: 3, x: 446, y: 2400, width: 800, height: 600 }
+  { 
+    number: 1, 
+    x: 149, 
+    y: 576, 
+    width: 2374,  // 2523 - 149
+    height: 1540  // 2116 - 576
+  },
+  { 
+    number: 2, 
+    x: 146, 
+    y: 3888, 
+    width: 2374,  // 2520 - 146
+    height: 1541  // 5429 - 3888
+  },
+  { 
+    number: 3, 
+    x: 156, 
+    y: 2225, 
+    width: 2367,  // 2523 - 156 (aproximado)
+    height: 1544  // 3769 - 2225 (aproximado)
+  }
 ];
 
 // Tenta carregar o template
@@ -229,16 +252,26 @@ function createFallbackTemplate() {
   fallbackCtx.textAlign = 'center';
   fallbackCtx.fillText('📸 CABINE FOTOGRÁFICA', 3375/2, 500);
   
+  // Mostra áreas das fotos
+  fallbackCtx.strokeStyle = 'red';
+  fallbackCtx.lineWidth = 10;
+  photoAreas.forEach(area => {
+    fallbackCtx.strokeRect(area.x, area.y, area.width, area.height);
+    fallbackCtx.fillStyle = 'white';
+    fallbackCtx.font = 'bold 60px Arial';
+    fallbackCtx.fillText(`FOTO ${area.number}`, area.x + area.width/2 - 100, area.y + area.height/2);
+  });
+  
   templateImage.src = fallbackCanvas.toDataURL();
   templateLoaded = true;
 }
 
-// Mostra tela inicial imediatamente (sem fullscreen)
+// Mostra tela inicial
 window.addEventListener('load', () => {
   welcomeScreen.style.display = 'flex';
 });
 
-// Entrar em tela cheia - CORRIGIDO
+// Entrar em tela cheia
 enterFullscreenBtn.addEventListener('click', () => {
   if (document.documentElement.requestFullscreen) {
     document.documentElement.requestFullscreen()
@@ -285,7 +318,7 @@ async function startPhotoSession() {
     
   } catch (error) {
     console.error('Erro na sessão:', error);
-    showError('Erro ao acessar a câmera: ' + error.message);
+    showError('Erro ao acessar a câmera');
   }
 }
 
@@ -373,7 +406,7 @@ async function createFinalMontage() {
               try {
                 // Desenha a foto redimensionada para caber na área
                 montageCtx.drawImage(img, area.x, area.y, area.width, area.height);
-                console.log(`✅ Foto ${area.number} posicionada`);
+                console.log(`✅ Foto ${area.number} posicionada em x:${area.x}, y:${area.y}`);
               } catch (error) {
                 console.error(`Erro ao desenhar foto ${area.number}:`, error);
               }
@@ -464,11 +497,6 @@ socket.on('restartSession', () => {
   console.log('🔄 Reiniciando sessão...');
   resultScreen.style.display = 'none';
   startScreen.style.display = 'flex';
-});
-
-// Orientação da tela
-screen.orientation.lock('portrait').catch(() => {
-  console.log('Orientação portrait não suportada');
 });
 </script>
 </body>
