@@ -33,11 +33,14 @@ body {
   display: flex;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
+#startScreen {
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+}
 #cameraScreen {
   background: #000;
 }
 #resultScreen {
-  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  background: linear-gradient(135deg, #ff6b6b 0%, #ffa500 100%);
 }
 h1 {
   font-size: 2.5em;
@@ -132,6 +135,7 @@ canvas {
   <h1>🎉 Cabine Fotográfica</h1>
   <h2>Bem-vindo!</h2>
   <button id="enterFullscreen">🚀 ENTRAR EM TELA CHEIA</button>
+  <button id="skipFullscreen" style="background: transparent; color: white; border: 2px solid white;">⏭️ PULAR TELA CHEIA</button>
 </div>
 
 <!-- Tela de Início -->
@@ -172,6 +176,7 @@ const countdownEl = document.getElementById('countdown');
 const photoCounterEl = document.getElementById('photoCounter');
 const finalImageEl = document.getElementById('finalImage');
 const enterFullscreenBtn = document.getElementById('enterFullscreen');
+const skipFullscreenBtn = document.getElementById('skipFullscreen');
 const startSessionBtn = document.getElementById('startSession');
 
 const ctx = canvas.getContext('2d');
@@ -186,8 +191,7 @@ let photos = [];
 let templateImage = new Image();
 let templateLoaded = false;
 
-// COORDENADAS CORRIGIDAS para 6000x3375 (VERTICAL)
-// Ajustei as coordenadas para fotos maiores no template vertical
+// COORDENADAS para 6000x3375 (VERTICAL)
 const photoAreas = [
   { number: 1, x: 446, y: 800, width: 800, height: 600 },
   { number: 2, x: 446, y: 1600, width: 800, height: 600 },
@@ -195,7 +199,7 @@ const photoAreas = [
 ];
 
 // Tenta carregar o template
-templateImage.src = "moldura.png"; // SEU ARQUivo AQUI
+templateImage.src = "moldura.png";
 templateImage.onload = () => {
   console.log("✅ Template carregado com sucesso");
   templateLoaded = true;
@@ -225,30 +229,36 @@ function createFallbackTemplate() {
   fallbackCtx.textAlign = 'center';
   fallbackCtx.fillText('📸 CABINE FOTOGRÁFICA', 3375/2, 500);
   
-  // Áreas das fotos (visual)
-  fallbackCtx.strokeStyle = 'white';
-  fallbackCtx.lineWidth = 5;
-  photoAreas.forEach(area => {
-    fallbackCtx.strokeRect(area.x, area.y, area.width, area.height);
-  });
-  
   templateImage.src = fallbackCanvas.toDataURL();
   templateLoaded = true;
 }
 
+// Mostra tela inicial imediatamente (sem fullscreen)
+window.addEventListener('load', () => {
+  welcomeScreen.style.display = 'flex';
+});
+
 // Entrar em tela cheia - CORRIGIDO
 enterFullscreenBtn.addEventListener('click', () => {
   if (document.documentElement.requestFullscreen) {
-    document.documentElement.requestFullscreen().catch(e => {
-      console.log('Fullscreen não permitido, continuando...');
-      proceedToStart();
-    });
+    document.documentElement.requestFullscreen()
+      .then(() => {
+        console.log('✅ Entrou em tela cheia');
+        goToStartScreen();
+      })
+      .catch(error => {
+        console.log('❌ Fullscreen não permitido:', error);
+        goToStartScreen();
+      });
   } else {
-    proceedToStart();
+    goToStartScreen();
   }
 });
 
-function proceedToStart() {
+// Pular tela cheia
+skipFullscreenBtn.addEventListener('click', goToStartScreen);
+
+function goToStartScreen() {
   welcomeScreen.style.display = 'none';
   startScreen.style.display = 'flex';
 }
@@ -275,7 +285,7 @@ async function startPhotoSession() {
     
   } catch (error) {
     console.error('Erro na sessão:', error);
-    showError('Erro ao acessar a câmera');
+    showError('Erro ao acessar a câmera: ' + error.message);
   }
 }
 
@@ -395,7 +405,7 @@ async function createFinalMontage() {
         const finalDataURL = montageCanvas.toDataURL('image/png');
         finalImageEl.src = finalDataURL;
         
-        // ENVIA PARA O PC - CORRIGIDO
+        // ENVIA PARA O PC
         console.log("📤 Enviando foto para PC...");
         socket.emit('finalPhoto', {
           session: session,
@@ -456,13 +466,9 @@ socket.on('restartSession', () => {
   startScreen.style.display = 'flex';
 });
 
-// Previne saída do fullscreen
-document.addEventListener('fullscreenchange', () => {
-  if (!document.fullscreenElement) {
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen().catch(() => {});
-    }
-  }
+// Orientação da tela
+screen.orientation.lock('portrait').catch(() => {
+  console.log('Orientação portrait não suportada');
 });
 </script>
 </body>
