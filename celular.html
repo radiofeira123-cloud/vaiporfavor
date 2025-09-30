@@ -3,211 +3,350 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Photobooth — Celular</title>
+<title>Cabine Fotográfica</title>
 <style>
-body { 
-  font-family: sans-serif; 
-  text-align: center; 
-  background: #111; 
-  color: #fff; 
+* {
   margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+body {
+  font-family: Arial, sans-serif;
+  background: #000;
+  color: #fff;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+.screen {
+  width: 100%;
+  height: 100%;
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
   padding: 20px;
 }
-video, canvas { 
-  width: 100%; 
-  max-width: 400px; 
-  border: 2px solid #fff; 
-  margin: 10px auto; 
-  display: block; 
-  border-radius: 10px;
-}
-#status { 
-  margin: 20px; 
-  font-size: 1.2em; 
-  font-weight: bold;
-  min-height: 60px;
+#welcomeScreen {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
-button { 
-  font-size: 1.2em; 
-  padding: 15px 30px; 
-  margin: 10px; 
-  background: #007bff;
-  color: white;
+#cameraScreen {
+  background: #000;
+}
+#resultScreen {
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+}
+h1 {
+  font-size: 2.5em;
+  margin-bottom: 20px;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+}
+h2 {
+  font-size: 2em;
+  margin-bottom: 30px;
+}
+button {
+  font-size: 1.5em;
+  padding: 20px 40px;
+  background: #fff;
+  color: #333;
   border: none;
-  border-radius: 25px;
+  border-radius: 50px;
   cursor: pointer;
+  margin: 10px;
+  font-weight: bold;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.3);
   transition: all 0.3s;
 }
 button:hover {
-  background: #0056b3;
   transform: scale(1.05);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.4);
 }
-button:disabled {
-  background: #666;
-  cursor: not-allowed;
-  transform: none;
+video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  position: absolute;
+  top: 0;
+  left: 0;
 }
-.countdown {
+canvas {
+  display: none;
+}
+#countdown {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 8em;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 0 20px rgba(255,255,255,0.8);
+  z-index: 100;
+}
+#photoCounter {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.5em;
+  background: rgba(0,0,0,0.7);
+  padding: 10px 20px;
+  border-radius: 20px;
+  z-index: 100;
+}
+#finalImage {
+  max-width: 90%;
+  max-height: 70%;
+  border: 10px solid white;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  margin-bottom: 30px;
+}
+.thankYou {
   font-size: 3em;
   font-weight: bold;
-  color: #ffa500;
-  text-shadow: 0 0 10px rgba(255,165,0,0.5);
+  margin-top: 30px;
+  animation: pulse 2s infinite;
 }
-.success { 
-  color: #00ff00; 
-  font-size: 1.4em;
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
 }
 </style>
 </head>
 <body>
-<h2>📸 Cabine Fotográfica</h2>
-<video id="preview" autoplay playsinline></video>
-<canvas id="canvas" style="display:none;"></canvas>
-<div id="status">Conectado. Clique em "Iniciar Sessão" para começar!</div>
-<button id="startBtn">Iniciar Sessão</button>
+<!-- Tela de Boas-Vindas -->
+<div id="welcomeScreen" class="screen">
+  <h1>🎉 Cabine Fotográfica</h1>
+  <h2>Bem-vindo!</h2>
+  <button id="enterFullscreen">🚀 ENTRAR EM TELA CHEIA</button>
+</div>
+
+<!-- Tela de Início -->
+<div id="startScreen" class="screen">
+  <h1>📸 Cabine Fotográfica</h1>
+  <h2>Prepare-se para a diversão!</h2>
+  <button id="startSession">🎬 CLIQUE AQUI PARA COMEÇAR</button>
+</div>
+
+<!-- Tela da Câmera -->
+<div id="cameraScreen" class="screen">
+  <video id="preview" autoplay playsinline></video>
+  <div id="countdown"></div>
+  <div id="photoCounter"></div>
+</div>
+
+<!-- Tela de Resultado -->
+<div id="resultScreen" class="screen">
+  <h1>🎉 Sua Foto Pronta!</h1>
+  <img id="finalImage" src="" alt="Foto Montada">
+  <div class="thankYou">Obrigado! 🥰</div>
+</div>
+
+<canvas id="canvas"></canvas>
+<canvas id="montageCanvas"></canvas>
 
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
-let video = document.getElementById('preview');
-let canvas = document.getElementById('canvas');
-let ctx = canvas.getContext('2d');
-let statusEl = document.getElementById('status');
-let startBtn = document.getElementById('startBtn');
-let session = new URLSearchParams(window.location.search).get("session");
-let socketURL = new URLSearchParams(window.location.search).get("socket");
+// Elementos
+const welcomeScreen = document.getElementById('welcomeScreen');
+const startScreen = document.getElementById('startScreen');
+const cameraScreen = document.getElementById('cameraScreen');
+const resultScreen = document.getElementById('resultScreen');
+const video = document.getElementById('preview');
+const canvas = document.getElementById('canvas');
+const montageCanvas = document.getElementById('montageCanvas');
+const countdownEl = document.getElementById('countdown');
+const photoCounterEl = document.getElementById('photoCounter');
+const finalImageEl = document.getElementById('finalImage');
+const enterFullscreenBtn = document.getElementById('enterFullscreen');
+const startSessionBtn = document.getElementById('startSession');
+
+const ctx = canvas.getContext('2d');
+const montageCtx = montageCanvas.getContext('2d');
+
+// Configurações
+const session = new URLSearchParams(window.location.search).get("session");
+const socketURL = new URLSearchParams(window.location.search).get("socket");
 let socket = io(socketURL);
 let localStream;
-let isSessionActive = false;
+let photos = [];
+let templateImage = new Image();
 
-// Verifica se os parâmetros necessários estão presentes
-if(!session || !socketURL) {
-  statusEl.innerHTML = '❌ Erro: Link inválido. Use o QR code gerado no PC.';
-  startBtn.disabled = true;
-}
+// Coordenadas do template (as mesmas que você definiu)
+const photoAreas = [
+  { number: 1, x: 446, y: 48, width: 203, height: 130 },
+  { number: 2, x: 446, y: 189, width: 203, height: 129 },
+  { number: 3, x: 446, y: 329, width: 203, height: 131 }
+];
 
-socket.on('connect', () => {
-  statusEl.innerHTML = '✅ Conectado! Clique em "Iniciar Sessão"';
+// Carrega o template
+templateImage.src = "moldura.png";
+
+// Entrar em tela cheia
+enterFullscreenBtn.addEventListener('click', () => {
+  document.documentElement.requestFullscreen().then(() => {
+    welcomeScreen.style.display = 'none';
+    startScreen.style.display = 'flex';
+  });
 });
 
-socket.on('disconnect', () => {
-  statusEl.innerHTML = '❌ Desconectado do servidor';
-});
+// Iniciar sessão
+startSessionBtn.addEventListener('click', startPhotoSession);
 
-async function initCamera(){
+async function startPhotoSession() {
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ 
-      video: { 
-        facingMode: "user",
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      }, 
-      audio: false 
-    });
-    video.srcObject = localStream;
-  } catch (error) {
-    statusEl.innerHTML = '❌ Erro ao acessar a câmera: ' + error.message;
-    startBtn.disabled = true;
-  }
-}
-
-initCamera();
-
-startBtn.onclick = () => {
-  if(isSessionActive) return;
-  
-  isSessionActive = true;
-  startBtn.disabled = true;
-  startBtn.textContent = "Sessão em Andamento...";
-  statusEl.innerHTML = '🎬 <strong>Prepare-se!</strong> A sessão vai começar...';
-  
-  setTimeout(startSequence, 2000);
-};
-
-async function startSequence(){
-  try {
-    for(let i=1;i<=3;i++){
-      await countdown(3, i);
-      await takePhoto(i);
-      if(i<3) {
-        statusEl.innerHTML = `📸 Foto ${i} capturada! Próxima em 3 segundos...`;
-        await delay(3000);
-      }
+    startScreen.style.display = 'none';
+    cameraScreen.style.display = 'flex';
+    
+    // Inicializa câmera
+    if (!localStream) {
+      localStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: "user" }, 
+        audio: false 
+      });
+      video.srcObject = localStream;
     }
-    statusEl.innerHTML = '<div class="success">✅ Fotos enviadas com sucesso! Obrigado! 🎉</div>';
     
-    // Prepara para próxima sessão após 5 segundos
-    setTimeout(() => {
-      isSessionActive = false;
-      startBtn.disabled = false;
-      startBtn.textContent = "Iniciar Sessão";
-      statusEl.innerHTML = '✅ Pronto para nova sessão! Clique em "Iniciar Sessão"';
-    }, 5000);
+    // Inicia sequência de fotos
+    await takePhotoSequence();
     
   } catch (error) {
-    statusEl.innerHTML = '❌ Erro durante a sessão: ' + error.message;
-    isSessionActive = false;
-    startBtn.disabled = false;
-    startBtn.textContent = "Tentar Novamente";
+    console.error('Erro:', error);
+    alert('Erro ao acessar a câmera');
   }
 }
 
-function countdown(sec, photoNumber){
-  return new Promise(resolve=>{
-    let c = sec;
-    statusEl.innerHTML = `<div class="countdown">${c}</div><div>Foto ${photoNumber} em...</div>`;
+async function takePhotoSequence() {
+  photos = [];
+  
+  for (let i = 1; i <= 3; i++) {
+    photoCounterEl.textContent = `Foto ${i} de 3`;
     
-    let interval = setInterval(()=>{
-      c--;
-      if(c>0){
-        statusEl.innerHTML = `<div class="countdown">${c}</div><div>Foto ${photoNumber} em...</div>`;
-      } else {
+    // Contagem regressiva
+    await countdown(3);
+    
+    // Tira foto
+    await takePhoto(i);
+    
+    // Pausa entre fotos (exceto após a última)
+    if (i < 3) {
+      countdownEl.textContent = "💫";
+      await delay(2000);
+    }
+  }
+  
+  // Cria montagem final
+  await createFinalMontage();
+  
+  // Mostra resultado
+  showResult();
+}
+
+function countdown(seconds) {
+  return new Promise(resolve => {
+    let count = seconds;
+    
+    const interval = setInterval(() => {
+      countdownEl.textContent = count;
+      count--;
+      
+      if (count < 0) {
+        countdownEl.textContent = "📸";
         clearInterval(interval);
-        statusEl.innerHTML = '<div class="countdown">📸</div><div>Smile!</div>';
         setTimeout(resolve, 500);
       }
-    },1000);
+    }, 1000);
   });
 }
 
-async function takePhoto(i){
-  try {
-    // Configura o canvas com as dimensões do vídeo
+async function takePhoto(index) {
+  return new Promise(resolve => {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    
-    // Desenha o frame atual do vídeo no canvas
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // Converte para DataURL (SEM MOLDURA)
-    let dataUrl = canvas.toDataURL("image/png");
+    const dataURL = canvas.toDataURL('image/png');
+    photos[index] = dataURL;
     
-    // Envia via Socket.io
-    socket.emit("photo", {
-      session: session, 
-      img: dataUrl, 
-      index: i,
-      timestamp: Date.now()
-    });
+    resolve();
+  });
+}
+
+async function createFinalMontage() {
+  return new Promise(resolve => {
+    templateImage.onload = () => {
+      montageCanvas.width = 3375;
+      montageCanvas.height = 6000;
+      
+      // Desenha template
+      montageCtx.drawImage(templateImage, 0, 0, montageCanvas.width, montageCanvas.height);
+      
+      let loadedPhotos = 0;
+      
+      // Desenha cada foto na posição correta
+      photoAreas.forEach(area => {
+        const img = new Image();
+        img.onload = () => {
+          montageCtx.drawImage(img, area.x, area.y, area.width, area.height);
+          loadedPhotos++;
+          
+          if (loadedPhotos === 3) {
+            // Converte para DataURL e envia para PC
+            const finalDataURL = montageCanvas.toDataURL('image/png');
+            finalImageEl.src = finalDataURL;
+            
+            // Envia para PC
+            socket.emit('finalPhoto', {
+              session: session,
+              finalImage: finalDataURL,
+              timestamp: Date.now()
+            });
+            
+            resolve();
+          }
+        };
+        img.src = photos[area.number];
+      });
+    };
     
-    statusEl.innerHTML = `✅ Foto ${i} enviada!`;
-    
-  } catch (error) {
-    console.error('Erro ao tirar foto:', error);
-    throw error;
+    // Se template já estiver carregado
+    if (templateImage.complete) {
+      templateImage.onload();
+    }
+  });
+}
+
+function showResult() {
+  cameraScreen.style.display = 'none';
+  resultScreen.style.display = 'flex';
+  
+  // Após 10 segundos, mostra "obrigado"
+  setTimeout(() => {
+    document.querySelector('h1').style.display = 'none';
+    finalImageEl.style.display = 'none';
+  }, 10000);
+  
+  // Aguarda sinal do PC para reiniciar
+  socket.on('restartSession', () => {
+    resultScreen.style.display = 'none';
+    startScreen.style.display = 'flex';
+  });
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Sai do fullscreen se apertar ESC
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen();
   }
-}
-
-function delay(ms){ 
-  return new Promise(r=>setTimeout(r,ms)); 
-}
-
-// Tratamento de erro global
-window.addEventListener('error', (e) => {
-  console.error('Erro global:', e.error);
-  statusEl.innerHTML = '❌ Ocorreu um erro. Recarregue a página.';
 });
 </script>
 </body>
