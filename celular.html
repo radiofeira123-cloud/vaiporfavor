@@ -17,6 +17,7 @@ body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  touch-action: manipulation;
 }
 .screen {
   width: 100%;
@@ -111,6 +112,13 @@ canvas {
   margin-top: 30px;
   animation: pulse 2s infinite;
 }
+.error {
+  color: #ff4444;
+  background: rgba(255,68,68,0.1);
+  padding: 15px;
+  border-radius: 10px;
+  margin: 10px 0;
+}
 @keyframes pulse {
   0% { transform: scale(1); }
   50% { transform: scale(1.1); }
@@ -172,28 +180,78 @@ const montageCtx = montageCanvas.getContext('2d');
 // Configurações
 const session = new URLSearchParams(window.location.search).get("session");
 const socketURL = new URLSearchParams(window.location.search).get("socket");
-let socket = io(socketURL);
+let socket = io(socketURL, { transports: ['websocket'] });
 let localStream;
 let photos = [];
 let templateImage = new Image();
+let templateLoaded = false;
 
-// Coordenadas do template (as mesmas que você definiu)
+// COORDENADAS CORRIGIDAS para 6000x3375 (VERTICAL)
+// Ajustei as coordenadas para fotos maiores no template vertical
 const photoAreas = [
-  { number: 1, x: 446, y: 48, width: 203, height: 130 },
-  { number: 2, x: 446, y: 189, width: 203, height: 129 },
-  { number: 3, x: 446, y: 329, width: 203, height: 131 }
+  { number: 1, x: 446, y: 800, width: 800, height: 600 },
+  { number: 2, x: 446, y: 1600, width: 800, height: 600 },
+  { number: 3, x: 446, y: 2400, width: 800, height: 600 }
 ];
 
-// Carrega o template
-templateImage.src = "caralho.png";
+// Tenta carregar o template
+templateImage.src = "moldura.png"; // SEU ARQUivo AQUI
+templateImage.onload = () => {
+  console.log("✅ Template carregado com sucesso");
+  templateLoaded = true;
+};
+templateImage.onerror = () => {
+  console.log("⚠️ Template não encontrado, usando fallback");
+  templateLoaded = false;
+  createFallbackTemplate();
+};
 
-// Entrar em tela cheia
-enterFullscreenBtn.addEventListener('click', () => {
-  document.documentElement.requestFullscreen().then(() => {
-    welcomeScreen.style.display = 'none';
-    startScreen.style.display = 'flex';
+function createFallbackTemplate() {
+  const fallbackCanvas = document.createElement('canvas');
+  fallbackCanvas.width = 3375;
+  fallbackCanvas.height = 6000;
+  const fallbackCtx = fallbackCanvas.getContext('2d');
+  
+  // Fundo
+  const gradient = fallbackCtx.createLinearGradient(0, 0, 3375, 6000);
+  gradient.addColorStop(0, '#667eea');
+  gradient.addColorStop(1, '#764ba2');
+  fallbackCtx.fillStyle = gradient;
+  fallbackCtx.fillRect(0, 0, 3375, 6000);
+  
+  // Título
+  fallbackCtx.fillStyle = 'white';
+  fallbackCtx.font = 'bold 120px Arial';
+  fallbackCtx.textAlign = 'center';
+  fallbackCtx.fillText('📸 CABINE FOTOGRÁFICA', 3375/2, 500);
+  
+  // Áreas das fotos (visual)
+  fallbackCtx.strokeStyle = 'white';
+  fallbackCtx.lineWidth = 5;
+  photoAreas.forEach(area => {
+    fallbackCtx.strokeRect(area.x, area.y, area.width, area.height);
   });
+  
+  templateImage.src = fallbackCanvas.toDataURL();
+  templateLoaded = true;
+}
+
+// Entrar em tela cheia - CORRIGIDO
+enterFullscreenBtn.addEventListener('click', () => {
+  if (document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(e => {
+      console.log('Fullscreen não permitido, continuando...');
+      proceedToStart();
+    });
+  } else {
+    proceedToStart();
+  }
 });
+
+function proceedToStart() {
+  welcomeScreen.style.display = 'none';
+  startScreen.style.display = 'flex';
+}
 
 // Iniciar sessão
 startSessionBtn.addEventListener('click', startPhotoSession);
@@ -216,8 +274,8 @@ async function startPhotoSession() {
     await takePhotoSequence();
     
   } catch (error) {
-    console.error('Erro:', error);
-    alert('Erro ao acessar a câmera');
+    console.error('Erro na sessão:', error);
+    showError('Erro ao acessar a câmera');
   }
 }
 
@@ -233,7 +291,7 @@ async function takePhotoSequence() {
     // Tira foto
     await takePhoto(i);
     
-    // Pausa entre fotos (exceto após a última)
+    // Pausa entre fotos
     if (i < 3) {
       countdownEl.textContent = "💫";
       await delay(2000);
@@ -252,72 +310,106 @@ function countdown(seconds) {
     let count = seconds;
     
     const interval = setInterval(() => {
-      countdownEl.textContent = count;
+      countdownEl.textContent = count > 0 ? count : "📸";
       count--;
       
-      if (count < 0) {
-        countdownEl.textContent = "📸";
+      if (count < -1) {
         clearInterval(interval);
-        setTimeout(resolve, 500);
+        resolve();
       }
     }, 1000);
   });
 }
 
 async function takePhoto(index) {
-  return new Promise(resolve => {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    const dataURL = canvas.toDataURL('image/png');
-    photos[index] = dataURL;
-    
-    resolve();
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      try {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const dataURL = canvas.toDataURL('image/png');
+        photos[index] = dataURL;
+        console.log(`✅ Foto ${index} capturada`);
+      } catch (error) {
+        console.error('Erro ao capturar foto:', error);
+      }
+      resolve();
+    }, 100);
   });
 }
 
 async function createFinalMontage() {
-  return new Promise(resolve => {
-    templateImage.onload = () => {
-      montageCanvas.width = 3375;
-      montageCanvas.height = 6000;
-      
-      // Desenha template
-      montageCtx.drawImage(templateImage, 0, 0, montageCanvas.width, montageCanvas.height);
-      
-      let loadedPhotos = 0;
-      
-      // Desenha cada foto na posição correta
-      photoAreas.forEach(area => {
-        const img = new Image();
-        img.onload = () => {
-          montageCtx.drawImage(img, area.x, area.y, area.width, area.height);
-          loadedPhotos++;
-          
-          if (loadedPhotos === 3) {
-            // Converte para DataURL e envia para PC
-            const finalDataURL = montageCanvas.toDataURL('image/png');
-            finalImageEl.src = finalDataURL;
-            
-            // Envia para PC
-            socket.emit('finalPhoto', {
-              session: session,
-              finalImage: finalDataURL,
-              timestamp: Date.now()
-            });
-            
-            resolve();
+  return new Promise((resolve) => {
+    const checkTemplate = () => {
+      if (templateLoaded) {
+        // Tamanho do template VERTICAL 3375x6000
+        montageCanvas.width = 3375;
+        montageCanvas.height = 6000;
+        
+        // Limpa e desenha template
+        montageCtx.clearRect(0, 0, montageCanvas.width, montageCanvas.height);
+        montageCtx.drawImage(templateImage, 0, 0, montageCanvas.width, montageCanvas.height);
+        
+        let loadedPhotos = 0;
+        const totalPhotos = 3;
+        
+        // Desenha cada foto na posição correta
+        photoAreas.forEach(area => {
+          if (photos[area.number]) {
+            const img = new Image();
+            img.onload = () => {
+              try {
+                // Desenha a foto redimensionada para caber na área
+                montageCtx.drawImage(img, area.x, area.y, area.width, area.height);
+                console.log(`✅ Foto ${area.number} posicionada`);
+              } catch (error) {
+                console.error(`Erro ao desenhar foto ${area.number}:`, error);
+              }
+              
+              loadedPhotos++;
+              if (loadedPhotos === totalPhotos) {
+                finalizeMontage();
+                resolve();
+              }
+            };
+            img.onerror = () => {
+              console.error(`Erro ao carregar foto ${area.number}`);
+              loadedPhotos++;
+              if (loadedPhotos === totalPhotos) {
+                finalizeMontage();
+                resolve();
+              }
+            };
+            img.src = photos[area.number];
           }
-        };
-        img.src = photos[area.number];
-      });
+        });
+      } else {
+        setTimeout(checkTemplate, 100);
+      }
     };
     
-    // Se template já estiver carregado
-    if (templateImage.complete) {
-      templateImage.onload();
+    function finalizeMontage() {
+      try {
+        const finalDataURL = montageCanvas.toDataURL('image/png');
+        finalImageEl.src = finalDataURL;
+        
+        // ENVIA PARA O PC - CORRIGIDO
+        console.log("📤 Enviando foto para PC...");
+        socket.emit('finalPhoto', {
+          session: session,
+          finalImage: finalDataURL,
+          timestamp: Date.now()
+        });
+        
+        console.log("✅ Foto enviada para PC");
+      } catch (error) {
+        console.error("❌ Erro ao enviar para PC:", error);
+      }
     }
+    
+    checkTemplate();
   });
 }
 
@@ -325,27 +417,51 @@ function showResult() {
   cameraScreen.style.display = 'none';
   resultScreen.style.display = 'flex';
   
-  // Após 10 segundos, mostra "obrigado"
+  // Após 10 segundos, mostra apenas "obrigado"
   setTimeout(() => {
-    document.querySelector('h1').style.display = 'none';
+    document.querySelector('#resultScreen h1').style.display = 'none';
     finalImageEl.style.display = 'none';
   }, 10000);
+}
+
+function showError(message) {
+  const errorDiv = document.createElement('div');
+  errorDiv.className = 'error';
+  errorDiv.textContent = message;
+  document.body.appendChild(errorDiv);
   
-  // Aguarda sinal do PC para reiniciar
-  socket.on('restartSession', () => {
-    resultScreen.style.display = 'none';
+  setTimeout(() => {
+    errorDiv.remove();
     startScreen.style.display = 'flex';
-  });
+    cameraScreen.style.display = 'none';
+  }, 5000);
 }
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Sai do fullscreen se apertar ESC
+// Socket events
+socket.on('connect', () => {
+  console.log('✅ Conectado ao servidor');
+});
+
+socket.on('disconnect', () => {
+  console.log('❌ Desconectado do servidor');
+});
+
+socket.on('restartSession', () => {
+  console.log('🔄 Reiniciando sessão...');
+  resultScreen.style.display = 'none';
+  startScreen.style.display = 'flex';
+});
+
+// Previne saída do fullscreen
 document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen();
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
   }
 });
 </script>
