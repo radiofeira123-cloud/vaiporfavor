@@ -14,6 +14,10 @@
   #fullscreenView img { max-width:90%; max-height:90%; }
   #fullscreenView button { position:absolute; top:20px; right:20px; font-size:24px; background:#fff; border:none; cursor:pointer; }
   #qrcode { margin-top:20px; }
+  #finalMontage { margin-top: 20px; display: none; }
+  #finalMontage img { max-width: 300px; border: 2px solid #fff; border-radius: 8px; }
+  .loading { color: #ffa500; }
+  .success { color: #00ff00; }
 </style>
 </head>
 <body>
@@ -26,7 +30,19 @@
   <button id="resetBtn">Reiniciar sessão</button>
 </div>
 <div id="qrcode"></div>
-<div id="gallery"></div>
+
+<!-- Área para mostrar a montagem final -->
+<div id="finalMontage">
+  <h3>🎉 Montagem Final</h3>
+  <img id="finalImage" src="" alt="Montagem Final">
+  <div style="margin-top: 10px;">
+    <button id="downloadFinal">📥 Baixar Montagem</button>
+    <button id="shareFinal">🔗 Compartilhar</button>
+  </div>
+</div>
+
+<!-- Galeria das fotos individuais (oculta) -->
+<div id="gallery" style="display:none;"></div>
 
 <div id="fullscreenView">
   <button onclick="closeFullscreen()">✖</button>
@@ -41,18 +57,65 @@ const session='pc_'+Date.now();
 document.getElementById("session").innerText=session;
 let socket=io(DEFAULT_SOCKET_SERVER,{transports:["websocket"]});
 
+// COORDENADAS QUE VOCÊ DEFINIU
+const photoAreas = [
+  {
+    number: 1,
+    x: 446,
+    y: 48,
+    width: 203,
+    height: 130
+  },
+  {
+    number: 2,
+    x: 446,
+    y: 189,
+    width: 203,
+    height: 129
+  },
+  {
+    number: 3,
+    x: 446,
+    y: 329,
+    width: 203,
+    height: 131
+  }
+];
+
+// Template da moldura (substitua pelo seu arquivo)
+const templateSrc = "caralho.png"; // Coloque seu template aqui
+
+let receivedPhotos = [];
+let photosLoaded = 0;
+let templateImage = new Image();
+
+// Carrega o template
+templateImage.src = templateSrc;
+templateImage.onload = () => {
+  console.log("✅ Template carregado");
+};
+
 socket.on("connect",()=>{
   socket.emit("join",{session});
   document.getElementById("status").innerText="Conectado — aguardando fotos...";
 });
 
 socket.on("photo",(msg)=>{
-  if(msg.session && msg.dataURL){
-    addPhoto(msg.dataURL);
+  if(msg.session && msg.img){
+    document.getElementById("status").innerText = `📸 Recebendo foto ${msg.index}...`;
+    addPhoto(msg.img, msg.index);
   }
 });
 
-function addPhoto(dataURL){
+function addPhoto(dataURL, index){
+  // Salva a foto recebida
+  receivedPhotos[index] = dataURL;
+  photosLoaded++;
+  
+  // Atualiza status
+  document.getElementById("status").innerText = `✅ Foto ${index} recebida (${photosLoaded}/3)...`;
+  
+  // Mostra na galeria (oculta)
   const wrapper=document.createElement("div");
   wrapper.className="photo-wrapper";
   const img=document.createElement("img");
@@ -60,7 +123,77 @@ function addPhoto(dataURL){
   img.onclick=()=>openFullscreen(dataURL);
   wrapper.appendChild(img);
   document.getElementById("gallery").appendChild(wrapper);
+  
+  // Verifica se já temos as 3 fotos para criar a montagem
+  if(receivedPhotos[1] && receivedPhotos[2] && receivedPhotos[3]){
+    document.getElementById("status").innerText = "🔄 Criando montagem final...";
+    setTimeout(() => {
+      createFinalMontage();
+    }, 500);
+  }
 }
+
+function createFinalMontage(){
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  
+  // Define o tamanho do canvas igual ao template (3375x6000)
+  canvas.width = 3375;
+  canvas.height = 6000;
+  
+  // Desenha o template de fundo
+  ctx.drawImage(templateImage, 0, 0, canvas.width, canvas.height);
+  
+  let photosDrawn = 0;
+  const totalPhotos = 3;
+  
+  // Para cada foto, desenha na posição definida
+  photoAreas.forEach(area => {
+    const photoIndex = area.number;
+    if(receivedPhotos[photoIndex]){
+      const photoImg = new Image();
+      photoImg.onload = () => {
+        // Desenha a foto redimensionada para caber na área
+        ctx.drawImage(photoImg, area.x, area.y, area.width, area.height);
+        photosDrawn++;
+        
+        // Se todas as fotos foram desenhadas, mostra o resultado
+        if(photosDrawn === totalPhotos){
+          showFinalResult(canvas.toDataURL());
+        }
+      };
+      photoImg.src = receivedPhotos[photoIndex];
+    }
+  });
+}
+
+function showFinalResult(finalDataURL){
+  document.getElementById("status").innerText = "✅ Montagem final pronta!";
+  document.getElementById("finalImage").src = finalDataURL;
+  document.getElementById("finalMontage").style.display = "block";
+  
+  // Salva a montagem final para download/compartilhamento
+  window.finalMontageUrl = finalDataURL;
+}
+
+// Download da montagem final
+document.getElementById("downloadFinal").onclick = () => {
+  if(window.finalMontageUrl){
+    const link = document.createElement('a');
+    link.download = `photobooth-${session}.png`;
+    link.href = window.finalMontageUrl;
+    link.click();
+  }
+};
+
+// Compartilhar montagem final
+document.getElementById("shareFinal").onclick = () => {
+  if(window.finalMontageUrl){
+    // Cria um link temporário para visualização
+    const viewerUrl = `${location.origin}/visualizador.html?photos=${encodeURIComponent(JSON.stringify([window.finalMontageUrl]))}`;
+    showQR(viewerUrl);
+  }
+};
 
 function openFullscreen(url){
   document.getElementById("fullscreenImg").src=url;
