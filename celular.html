@@ -185,39 +185,38 @@ const montageCtx = montageCanvas.getContext('2d');
 // Configurações
 const session = new URLSearchParams(window.location.search).get("session");
 const socketURL = new URLSearchParams(window.location.search).get("socket");
-let socket = io(socketURL, { transports: ['websocket'] });
+let socket = io(socketURL, { 
+  transports: ['websocket', 'polling'],
+  timeout: 10000
+});
+
 let localStream;
 let photos = [];
 let templateImage = new Image();
 let templateLoaded = false;
 
 // COORDENADAS REAIS do image-map.net (3375x6000)
-// Convertidas das suas áreas:
-// Área 1: 149,2116,2523,576 → x1=149, y1=576, x2=2523, y2=2116
-// Área 2: 146,5429,2520,3888 → x1=146, y1=3888, x2=2520, y2=5429
-// Área 3: coordenadas complexas - vou usar aproximação
-
 const photoAreas = [
   { 
     number: 1, 
     x: 149, 
     y: 576, 
-    width: 2374,  // 2523 - 149
-    height: 1540  // 2116 - 576
+    width: 2374,
+    height: 1540
   },
   { 
     number: 2, 
     x: 146, 
     y: 3888, 
-    width: 2374,  // 2520 - 146
-    height: 1541  // 5429 - 3888
+    width: 2374,
+    height: 1541
   },
   { 
     number: 3, 
     x: 156, 
     y: 2225, 
-    width: 2367,  // 2523 - 156 (aproximado)
-    height: 1544  // 3769 - 2225 (aproximado)
+    width: 2367,
+    height: 1544
   }
 ];
 
@@ -438,15 +437,21 @@ async function createFinalMontage() {
         const finalDataURL = montageCanvas.toDataURL('image/png');
         finalImageEl.src = finalDataURL;
         
-        // ENVIA PARA O PC
+        // ENVIA PARA O PC - CORRIGIDO
         console.log("📤 Enviando foto para PC...");
-        socket.emit('finalPhoto', {
+        
+        const photoData = {
           session: session,
           finalImage: finalDataURL,
           timestamp: Date.now()
-        });
+        };
         
-        console.log("✅ Foto enviada para PC");
+        // Tenta enviar por ambos os eventos para garantir
+        socket.emit("final_photo", photoData);
+        socket.emit("finalPhoto", photoData); // Evento antigo para compatibilidade
+        
+        console.log("✅ Foto enviada para PC via Socket.io");
+        
       } catch (error) {
         console.error("❌ Erro ao enviar para PC:", error);
       }
@@ -484,19 +489,50 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Socket events
+// Socket events - CORRIGIDOS
 socket.on('connect', () => {
-  console.log('✅ Conectado ao servidor');
+  console.log('✅ Conectado ao servidor Socket.io');
 });
 
 socket.on('disconnect', () => {
   console.log('❌ Desconectado do servidor');
 });
 
-socket.on('restartSession', () => {
+socket.on('connect_error', (error) => {
+  console.log('❌ Erro de conexão:', error);
+});
+
+socket.on('restart_session', (data) => {
+  console.log('🔄 Recebido comando para reiniciar sessão');
+  if (data.session === session) {
+    restartSession();
+  }
+});
+
+socket.on('restartSession', (data) => {
+  console.log('🔄 Recebido comando antigo para reiniciar');
+  if (data.session === session) {
+    restartSession();
+  }
+});
+
+function restartSession() {
   console.log('🔄 Reiniciando sessão...');
   resultScreen.style.display = 'none';
   startScreen.style.display = 'flex';
+  
+  // Reseta variáveis
+  photos = [];
+  finalImageEl.src = '';
+}
+
+// Previne saída do fullscreen
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) {
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  }
 });
 </script>
 </body>
