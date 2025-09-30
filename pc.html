@@ -41,13 +41,14 @@
   .waiting { background: #333; }
   .receiving { background: #ffa500; }
   .ready { background: #008000; }
+  .connected { background: #007bff; }
 </style>
 </head>
 <body>
 <h1>Photobooth — Controle PC</h1>
 <div>Session: <span id="session">—</span></div>
 
-<div id="status" class="status waiting">Aguardando fotos do celular...</div>
+<div id="status" class="status waiting">Conectando ao servidor...</div>
 
 <div class="controls">
   <button id="generateControlUrl">Gerar QR Code do Celular</button>
@@ -66,6 +67,7 @@
     <input type="text" id="phoneNumber" placeholder="Número WhatsApp (ex: 5511999999999)" />
     <input type="text" id="customMessage" placeholder="Mensagem personalizada" value="Confira minha foto da cabine fotográfica! 🎉" />
     <button id="sendWhatsApp">Enviar via WhatsApp</button>
+    <button id="uploadImgBB" style="background: #28a745;">☁️ Fazer Upload para ImgBB</button>
   </div>
 </div>
 
@@ -74,75 +76,127 @@
 <script>
 const DEFAULT_SOCKET_SERVER = "https://render-9ea7.onrender.com";
 const session = 'pc_' + Date.now();
+const IMGBB_API_KEY = "79cf8905f02f40f5572e975eb5a1c0c9"; // API key do ImgBB
 
 document.getElementById("session").innerText = session;
-let socket = io(DEFAULT_SOCKET_SERVER, { transports: ["websocket"] });
+let socket = io(DEFAULT_SOCKET_SERVER, { 
+  transports: ["websocket", "polling"],
+  timeout: 10000
+});
+
 let finalImageUrl = null;
+let imgbbUrl = null;
 
 console.log("🖥️ PC iniciado - Sessão:", session);
 
+// Eventos do Socket
 socket.on("connect", () => {
-  console.log("✅ Conectado ao servidor");
-  socket.emit("join", { session });
-  updateStatus("Conectado - Aguardando celular...", "waiting");
+  console.log("✅ Conectado ao servidor Socket.io");
+  socket.emit("join_room", { session: session });
+  updateStatus("✅ Conectado - Aguardando celular...", "connected");
 });
 
 socket.on("disconnect", () => {
   console.log("❌ Desconectado do servidor");
-  updateStatus("Desconectado - Tentando reconectar...", "waiting");
+  updateStatus("❌ Desconectado - Tentando reconectar...", "waiting");
 });
 
-// OUVINDO A MENSAGEM DO CELULAR
-socket.on("finalPhoto", (msg) => {
-  console.log("📨 Mensagem recebida:", msg);
+socket.on("connect_error", (error) => {
+  console.log("❌ Erro de conexão:", error);
+  updateStatus("❌ Erro de conexão com servidor", "waiting");
+});
+
+// OUVINDO A MENSAGEM DO CELULAR - CORRIGIDO
+socket.on("final_photo", (data) => {
+  console.log("📨 Foto recebida do celular:", data);
   
-  if (msg.session && msg.finalImage) {
-    console.log("✅ Foto final recebida do celular!");
-    updateStatus("📸 Foto final recebida!", "receiving");
+  if (data && data.finalImage) {
+    console.log("✅ Foto final recebida com sucesso!");
+    updateStatus("📸 Foto recebida! Processando...", "receiving");
     
-    // Mostra a imagem final
-    document.getElementById("finalImage").src = msg.finalImage;
-    document.getElementById("finalMontage").style.display = "block";
-    finalImageUrl = msg.finalImage;
-    
-    // Ativa botões
-    document.getElementById("generateViewerLink").disabled = false;
-    document.getElementById("restartSession").disabled = false;
-    
-    updateStatus("✅ Foto pronta para compartilhar!", "ready");
+    // Pequeno delay para garantir o carregamento
+    setTimeout(() => {
+      // Mostra a imagem final
+      document.getElementById("finalImage").src = data.finalImage;
+      document.getElementById("finalMontage").style.display = "block";
+      finalImageUrl = data.finalImage;
+      
+      // Ativa botões
+      document.getElementById("generateViewerLink").disabled = false;
+      document.getElementById("restartSession").disabled = false;
+      document.getElementById("uploadImgBB").disabled = false;
+      
+      updateStatus("✅ Foto pronta para compartilhar!", "ready");
+    }, 500);
   }
+});
+
+// Também escuta o evento antigo para compatibilidade
+socket.on("finalPhoto", (data) => {
+  console.log("📨 Foto recebida (evento antigo):", data);
+  socket.emit("final_photo", data); // Repete com o novo evento
 });
 
 // Gerar QR Code do celular
 document.getElementById("generateControlUrl").onclick = () => {
-  const url = location.origin + "/celular.html?session=" + session + "&socket=" + DEFAULT_SOCKET_SERVER;
+  const url = window.location.origin + "/celular.html?session=" + session + "&socket=" + encodeURIComponent(DEFAULT_SOCKET_SERVER);
   showQR(url, "QR Code para Celular");
+  updateStatus("📱 QR Code gerado - Escaneie com o celular", "connected");
 };
 
 // Gerar visualizador online
 document.getElementById("generateViewerLink").onclick = async () => {
-  if (!finalImageUrl) return;
+  if (!finalImageUrl) {
+    alert("Nenhuma foto recebida ainda");
+    return;
+  }
   
   updateStatus("⏳ Gerando link de visualização...", "receiving");
   
   try {
-    // Usa DataURL diretamente
-    const viewerUrl = `${location.origin}/visualizador.html?photo=${encodeURIComponent(finalImageUrl)}`;
+    // Usa DataURL diretamente (mais simples)
+    const viewerUrl = `${window.location.origin}/visualizador.html?photo=${encodeURIComponent(finalImageUrl)}`;
     
-    updateStatus("✅ Link gerado!", "ready");
+    updateStatus("✅ Link gerado com sucesso!", "ready");
     showQR(viewerUrl, "Visualizador Online");
     
   } catch (error) {
-    updateStatus("❌ Erro: " + error.message, "waiting");
+    updateStatus("❌ Erro ao gerar link: " + error.message, "waiting");
     console.error("Error:", error);
+  }
+};
+
+// Upload para ImgBB
+document.getElementById("uploadImgBB").onclick = async () => {
+  if (!finalImageUrl) {
+    alert("Nenhuma foto para fazer upload");
+    return;
+  }
+  
+  updateStatus("⏳ Fazendo upload para ImgBB...", "receiving");
+  
+  try {
+    const uploadedUrl = await uploadToImgBB(finalImageUrl);
+    imgbbUrl = uploadedUrl;
+    
+    updateStatus("✅ Upload concluído! Link copiado.", "ready");
+    
+    // Copia URL para área de transferência
+    await navigator.clipboard.writeText(uploadedUrl);
+    alert("✅ Upload concluído! Link copiado para área de transferência:\n" + uploadedUrl);
+    
+  } catch (error) {
+    console.error("❌ Erro no upload:", error);
+    updateStatus("❌ Erro no upload: " + error.message, "waiting");
+    alert("❌ Erro no upload: " + error.message);
   }
 };
 
 // Reiniciar sessão no celular
 document.getElementById("restartSession").onclick = () => {
   console.log("🔄 Enviando comando para reiniciar sessão no celular");
-  socket.emit("restartSession", { session });
-  updateStatus("Comando enviado - Celular reiniciando...", "waiting");
+  socket.emit("restart_session", { session: session });
+  updateStatus("🔄 Comando enviado - Reiniciando celular...", "receiving");
 };
 
 // Enviar WhatsApp
@@ -155,11 +209,43 @@ document.getElementById("sendWhatsApp").onclick = () => {
     return;
   }
   
-  const shareUrl = finalImageUrl;
-  const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message + '\n\n' + shareUrl)}`;
+  const shareUrl = imgbbUrl || finalImageUrl;
+  if (!shareUrl) {
+    alert("Nenhuma foto disponível para compartilhar");
+    return;
+  }
   
+  const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message + '\n\n' + shareUrl)}`;
   window.open(whatsappUrl, '_blank');
 };
+
+// Função para upload no ImgBB
+async function uploadToImgBB(dataURL) {
+  console.log("📤 Iniciando upload para ImgBB...");
+  
+  // Converte DataURL para Blob
+  const response = await fetch(dataURL);
+  const blob = await response.blob();
+  
+  // Cria FormData
+  const formData = new FormData();
+  formData.append('image', blob);
+  
+  // Faz upload
+  const uploadResponse = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+    method: 'POST',
+    body: formData
+  });
+  
+  const result = await uploadResponse.json();
+  console.log("📤 Resposta do ImgBB:", result);
+  
+  if (result.success) {
+    return result.data.url;
+  } else {
+    throw new Error(result.error?.message || 'Falha no upload');
+  }
+}
 
 function updateStatus(message, type) {
   const statusEl = document.getElementById("status");
@@ -171,18 +257,36 @@ function showQR(url, title = "") {
   const qrDiv = document.getElementById("qrcode");
   qrDiv.innerHTML = `<h3>${title}</h3>`;
   
-  QRCode.toCanvas(url, { width: 200 }, function(err, canvas) {
+  // Limpa QR code anterior
+  QRCode.toCanvas(url, { width: 200, margin: 2 }, function(err, canvas) {
     if (err) {
-      qrDiv.innerHTML += `<p style="color:red">Erro ao gerar QR</p>`;
+      qrDiv.innerHTML += `<p style="color:red">Erro ao gerar QR: ${err.message}</p>`;
       return;
     }
+    
+    // Remove canvas anterior se existir
+    const oldCanvas = qrDiv.querySelector('canvas');
+    if (oldCanvas) oldCanvas.remove();
+    
     qrDiv.appendChild(canvas);
   });
+  
+  // Atualiza link
+  const oldLink = qrDiv.querySelector('p');
+  if (oldLink) oldLink.remove();
   
   const link = document.createElement("p");
   link.innerHTML = `<a href="${url}" target="_blank" style="color:#0bf">${url}</a>`;
   qrDiv.appendChild(link);
 }
+
+// Teste de conexão periódico
+setInterval(() => {
+  if (!socket.connected) {
+    console.log("🔄 Tentando reconectar...");
+    socket.connect();
+  }
+}, 5000);
 </script>
 </body>
 </html>
