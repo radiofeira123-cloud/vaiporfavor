@@ -122,6 +122,17 @@ canvas {
   border-radius: 10px;
   margin: 10px 0;
 }
+.connection-status {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 5px 10px;
+  border-radius: 15px;
+  font-size: 12px;
+  z-index: 1000;
+}
+.connected { background: #28a745; }
+.disconnected { background: #dc3545; }
 @keyframes pulse {
   0% { transform: scale(1); }
   50% { transform: scale(1.1); }
@@ -130,6 +141,9 @@ canvas {
 </style>
 </head>
 <body>
+<!-- Status da Conexão -->
+<div id="connectionStatus" class="connection-status disconnected">🔴 Offline</div>
+
 <!-- Tela de Boas-Vindas -->
 <div id="welcomeScreen" class="screen">
   <h1>🎉 Cabine Fotográfica</h1>
@@ -178,6 +192,7 @@ const finalImageEl = document.getElementById('finalImage');
 const enterFullscreenBtn = document.getElementById('enterFullscreen');
 const skipFullscreenBtn = document.getElementById('skipFullscreen');
 const startSessionBtn = document.getElementById('startSession');
+const connectionStatus = document.getElementById('connectionStatus');
 
 const ctx = canvas.getContext('2d');
 const montageCtx = montageCanvas.getContext('2d');
@@ -185,15 +200,22 @@ const montageCtx = montageCanvas.getContext('2d');
 // Configurações
 const session = new URLSearchParams(window.location.search).get("session");
 const socketURL = new URLSearchParams(window.location.search).get("socket");
-let socket = io(socketURL, { 
+
+// Configuração robusta do Socket.io
+let socket = io(socketURL, {
   transports: ['websocket', 'polling'],
-  timeout: 10000
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  timeout: 20000
 });
 
 let localStream;
 let photos = [];
 let templateImage = new Image();
 let templateLoaded = false;
+let isConnected = false;
 
 // COORDENADAS REAIS do image-map.net (3375x6000)
 const photoAreas = [
@@ -251,16 +273,6 @@ function createFallbackTemplate() {
   fallbackCtx.textAlign = 'center';
   fallbackCtx.fillText('📸 CABINE FOTOGRÁFICA', 3375/2, 500);
   
-  // Mostra áreas das fotos
-  fallbackCtx.strokeStyle = 'red';
-  fallbackCtx.lineWidth = 10;
-  photoAreas.forEach(area => {
-    fallbackCtx.strokeRect(area.x, area.y, area.width, area.height);
-    fallbackCtx.fillStyle = 'white';
-    fallbackCtx.font = 'bold 60px Arial';
-    fallbackCtx.fillText(`FOTO ${area.number}`, area.x + area.width/2 - 100, area.y + area.height/2);
-  });
-  
   templateImage.src = fallbackCanvas.toDataURL();
   templateLoaded = true;
 }
@@ -270,19 +282,24 @@ window.addEventListener('load', () => {
   welcomeScreen.style.display = 'flex';
 });
 
-// Entrar em tela cheia
+// Entrar em tela cheia - CORRIGIDO
 enterFullscreenBtn.addEventListener('click', () => {
-  if (document.documentElement.requestFullscreen) {
-    document.documentElement.requestFullscreen()
-      .then(() => {
-        console.log('✅ Entrou em tela cheia');
-        goToStartScreen();
-      })
-      .catch(error => {
-        console.log('❌ Fullscreen não permitido:', error);
-        goToStartScreen();
-      });
-  } else {
+  try {
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen()
+        .then(() => {
+          console.log('✅ Entrou em tela cheia');
+          goToStartScreen();
+        })
+        .catch(error => {
+          console.log('❌ Fullscreen não permitido, continuando...');
+          goToStartScreen();
+        });
+    } else {
+      goToStartScreen();
+    }
+  } catch (error) {
+    console.log('❌ Erro fullscreen, continuando...');
     goToStartScreen();
   }
 });
@@ -446,11 +463,18 @@ async function createFinalMontage() {
           timestamp: Date.now()
         };
         
-        // Tenta enviar por ambos os eventos para garantir
-        socket.emit("final_photo", photoData);
-        socket.emit("finalPhoto", photoData); // Evento antigo para compatibilidade
-        
-        console.log("✅ Foto enviada para PC via Socket.io");
+        // Verifica se está conectado antes de enviar
+        if (isConnected && socket.connected) {
+          // Envia múltiplas vezes para garantir
+          socket.emit("final_photo", photoData);
+          setTimeout(() => socket.emit("final_photo", photoData), 500);
+          setTimeout(() => socket.emit("finalPhoto", photoData), 1000);
+          
+          console.log("✅ Foto enviada para PC (múltiplas tentativas)");
+        } else {
+          console.error("❌ Não conectado ao servidor, não foi possível enviar foto");
+          showError("Erro de conexão - Foto não enviada");
+        }
         
       } catch (error) {
         console.error("❌ Erro ao enviar para PC:", error);
@@ -489,17 +513,41 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Socket events - CORRIGIDOS
+// Socket events - CORRIGIDOS E ROBUSTOS
 socket.on('connect', () => {
   console.log('✅ Conectado ao servidor Socket.io');
+  isConnected = true;
+  connectionStatus.textContent = '🟢 Online';
+  connectionStatus.className = 'connection-status connected';
+  
+  // Entra na sala da sessão
+  socket.emit('join_room', { session: session });
 });
 
-socket.on('disconnect', () => {
-  console.log('❌ Desconectado do servidor');
+socket.on('disconnect', (reason) => {
+  console.log('❌ Desconectado do servidor:', reason);
+  isConnected = false;
+  connectionStatus.textContent = '🔴 Offline';
+  connectionStatus.className = 'connection-status disconnected';
 });
 
 socket.on('connect_error', (error) => {
   console.log('❌ Erro de conexão:', error);
+  isConnected = false;
+  connectionStatus.textContent = '🔴 Erro Conexão';
+  connectionStatus.className = 'connection-status disconnected';
+});
+
+socket.on('reconnect', (attemptNumber) => {
+  console.log('🔄 Reconectado ao servidor após', attemptNumber, 'tentativas');
+  isConnected = true;
+  connectionStatus.textContent = '🟢 Online';
+  connectionStatus.className = 'connection-status connected';
+});
+
+socket.on('reconnect_attempt', (attemptNumber) => {
+  console.log('🔄 Tentativa de reconexão:', attemptNumber);
+  connectionStatus.textContent = '🟡 Reconectando...';
 });
 
 socket.on('restart_session', (data) => {
@@ -529,11 +577,23 @@ function restartSession() {
 // Previne saída do fullscreen
 document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement) {
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen().catch(() => {});
+    try {
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    } catch (error) {
+      // Ignora erro
     }
   }
 });
+
+// Tentativa de reconexão manual
+setInterval(() => {
+  if (!isConnected && !socket.connected) {
+    console.log('🔄 Tentando reconectar manualmente...');
+    socket.connect();
+  }
+}, 5000);
 </script>
 </body>
 </html>
