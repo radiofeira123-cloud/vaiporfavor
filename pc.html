@@ -6,221 +6,205 @@
 <title>Photobooth — PC</title>
 <style>
   body { font-family: Arial, sans-serif; margin: 16px; background:#111; color:#fff; }
-  #gallery { display: flex; flex-wrap: wrap; margin-top: 12px; }
-  #gallery .photo-wrapper { position: relative; margin: 6px; }
-  #gallery img { height: 120px; cursor: pointer; border-radius: 4px; }
-  #gallery button.remove { position: absolute; top: 0; right: 0; background: rgba(0,0,0,0.6); color: #fff; border: none; cursor: pointer; }
-  #fullscreenView { position: fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.9); display:none; align-items:center; justify-content:center; }
-  #fullscreenView img { max-width:90%; max-height:90%; }
-  #fullscreenView button { position:absolute; top:20px; right:20px; font-size:24px; background:#fff; border:none; cursor:pointer; }
   #qrcode { margin-top:20px; }
   #finalMontage { margin-top: 20px; display: none; }
-  #finalMontage img { max-width: 300px; border: 2px solid #fff; border-radius: 8px; }
-  .loading { color: #ffa500; }
-  .success { color: #00ff00; }
+  #finalMontage img { max-width: 400px; border: 3px solid #fff; border-radius: 10px; margin: 10px 0; }
+  .controls { margin: 20px 0; }
+  button { 
+    background: #007bff; 
+    color: white; 
+    border: none; 
+    padding: 12px 24px; 
+    margin: 5px; 
+    border-radius: 5px; 
+    cursor: pointer; 
+    font-size: 16px; 
+  }
+  button:hover { background: #0056b3; }
+  button:disabled { background: #666; cursor: not-allowed; }
+  .whatsapp-section { margin: 20px 0; padding: 15px; background: #1e1e1e; border-radius: 8px; }
+  input { 
+    padding: 10px; 
+    margin: 5px; 
+    border: 1px solid #444; 
+    background: #333; 
+    color: white; 
+    border-radius: 4px; 
+    width: 200px;
+  }
+  .status { 
+    padding: 10px; 
+    margin: 10px 0; 
+    border-radius: 5px; 
+    font-weight: bold;
+  }
+  .waiting { background: #333; }
+  .receiving { background: #ffa500; }
+  .ready { background: #008000; }
 </style>
 </head>
 <body>
-<h1>Photobooth — PC</h1>
+<h1>Photobooth — Controle PC</h1>
 <div>Session: <span id="session">—</span></div>
-<div id="status">Aguardando fotos...</div>
-<div style="margin-top:10px">
-  <button id="generateControlUrl">Gerar link/QR do controle</button>
-  <button id="generateViewerLink">Gerar visualizador</button>
-  <button id="resetBtn">Reiniciar sessão</button>
+
+<div id="status" class="status waiting">Aguardando fotos do celular...</div>
+
+<div class="controls">
+  <button id="generateControlUrl">Gerar QR Code do Celular</button>
+  <button id="generateViewerLink" disabled>Gerar Visualizador Online</button>
+  <button id="restartSession" disabled>Reiniciar Sessão</button>
 </div>
+
 <div id="qrcode"></div>
 
-<!-- Área para mostrar a montagem final -->
 <div id="finalMontage">
-  <h3>🎉 Montagem Final</h3>
-  <img id="finalImage" src="" alt="Montagem Final">
-  <div style="margin-top: 10px;">
-    <button id="downloadFinal">📥 Baixar Montagem</button>
-    <button id="shareFinal">🔗 Compartilhar</button>
+  <h2>🎉 Foto Final Pronta!</h2>
+  <img id="finalImage" src="" alt="Foto Montada">
+  
+  <div class="whatsapp-section">
+    <h3>📤 Compartilhar Foto</h3>
+    <input type="text" id="phoneNumber" placeholder="Número WhatsApp (ex: 5511999999999)" />
+    <input type="text" id="customMessage" placeholder="Mensagem personalizada" value="Confira minha foto da cabine fotográfica! 🎉" />
+    <button id="sendWhatsApp">Enviar via WhatsApp</button>
   </div>
-</div>
-
-<!-- Galeria das fotos individuais (oculta) -->
-<div id="gallery" style="display:none;"></div>
-
-<div id="fullscreenView">
-  <button onclick="closeFullscreen()">✖</button>
-  <img id="fullscreenImg"/>
 </div>
 
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 <script>
-const DEFAULT_SOCKET_SERVER="https://render-9ea7.onrender.com";
-const session='pc_'+Date.now();
-document.getElementById("session").innerText=session;
-let socket=io(DEFAULT_SOCKET_SERVER,{transports:["websocket"]});
+const DEFAULT_SOCKET_SERVER = "https://render-9ea7.onrender.com";
+const session = 'pc_' + Date.now();
+const IMGBB_API_KEY = "substitua_com_sua_chave_imgbb"; // Você precisa conseguir uma API key gratuita
 
-// COORDENADAS QUE VOCÊ DEFINIU
-const photoAreas = [
-  {
-    number: 1,
-    x: 446,
-    y: 48,
-    width: 203,
-    height: 130
-  },
-  {
-    number: 2,
-    x: 446,
-    y: 189,
-    width: 203,
-    height: 129
-  },
-  {
-    number: 3,
-    x: 446,
-    y: 329,
-    width: 203,
-    height: 131
+document.getElementById("session").innerText = session;
+let socket = io(DEFAULT_SOCKET_SERVER, { transports: ["websocket"] });
+let finalImageUrl = null;
+let imgbbUrl = null;
+
+socket.on("connect", () => {
+  socket.emit("join", { session });
+  updateStatus("Conectado - Aguardando celular...", "waiting");
+});
+
+socket.on("finalPhoto", (msg) => {
+  if (msg.session && msg.finalImage) {
+    updateStatus("📸 Foto final recebida!", "receiving");
+    
+    // Mostra a imagem final
+    document.getElementById("finalImage").src = msg.finalImage;
+    document.getElementById("finalMontage").style.display = "block";
+    finalImageUrl = msg.finalImage;
+    
+    // Ativa botões
+    document.getElementById("generateViewerLink").disabled = false;
+    document.getElementById("restartSession").disabled = false;
+    
+    updateStatus("✅ Foto pronta para compartilhar!", "ready");
   }
-];
+});
 
-// Template da moldura (substitua pelo seu arquivo)
-const templateSrc = "caralho.png"; // Coloque seu template aqui
-
-let receivedPhotos = [];
-let photosLoaded = 0;
-let templateImage = new Image();
-
-// Carrega o template
-templateImage.src = templateSrc;
-templateImage.onload = () => {
-  console.log("✅ Template carregado");
+// Gerar QR Code do celular
+document.getElementById("generateControlUrl").onclick = () => {
+  const url = location.origin + "/celular.html?session=" + session + "&socket=" + DEFAULT_SOCKET_SERVER;
+  showQR(url, "QR Code para Celular");
 };
 
-socket.on("connect",()=>{
-  socket.emit("join",{session});
-  document.getElementById("status").innerText="Conectado — aguardando fotos...";
-});
-
-socket.on("photo",(msg)=>{
-  if(msg.session && msg.img){
-    document.getElementById("status").innerText = `📸 Recebendo foto ${msg.index}...`;
-    addPhoto(msg.img, msg.index);
+// Gerar visualizador online
+document.getElementById("generateViewerLink").onclick = async () => {
+  if (!finalImageUrl) return;
+  
+  updateStatus("⏳ Fazendo upload para nuvem...", "receiving");
+  
+  try {
+    // Faz upload para ImgBB
+    imgbbUrl = await uploadToImgBB(finalImageUrl);
+    
+    // Gera link do visualizador
+    const viewerUrl = `${location.origin}/visualizador.html?photo=${encodeURIComponent(imgbbUrl)}`;
+    
+    updateStatus("✅ Upload concluído!", "ready");
+    showQR(viewerUrl, "Visualizador Online");
+    
+  } catch (error) {
+    updateStatus("❌ Erro no upload: " + error.message, "waiting");
+    console.error("Upload error:", error);
+    
+    // Fallback: usa DataURL diretamente (menos ideal)
+    const viewerUrl = `${location.origin}/visualizador.html?photo=${encodeURIComponent(finalImageUrl)}`;
+    showQR(viewerUrl, "Visualizador Online (Fallback)");
   }
-});
+};
 
-function addPhoto(dataURL, index){
-  // Salva a foto recebida
-  receivedPhotos[index] = dataURL;
-  photosLoaded++;
+// Reiniciar sessão
+document.getElementById("restartSession").onclick = () => {
+  socket.emit("restartSession", { session });
+  document.getElementById("finalMontage").style.display = "none";
+  document.getElementById("generateViewerLink").disabled = true;
+  document.getElementById("restartSession").disabled = true;
+  finalImageUrl = null;
+  imgbbUrl = null;
+  updateStatus("Aguardando nova sessão...", "waiting");
+};
+
+// Enviar WhatsApp
+document.getElementById("sendWhatsApp").onclick = () => {
+  const phoneNumber = document.getElementById("phoneNumber").value.replace(/\D/g, '');
+  const message = document.getElementById("customMessage").value;
   
-  // Atualiza status
-  document.getElementById("status").innerText = `✅ Foto ${index} recebida (${photosLoaded}/3)...`;
-  
-  // Mostra na galeria (oculta)
-  const wrapper=document.createElement("div");
-  wrapper.className="photo-wrapper";
-  const img=document.createElement("img");
-  img.src=dataURL;
-  img.onclick=()=>openFullscreen(dataURL);
-  wrapper.appendChild(img);
-  document.getElementById("gallery").appendChild(wrapper);
-  
-  // Verifica se já temos as 3 fotos para criar a montagem
-  if(receivedPhotos[1] && receivedPhotos[2] && receivedPhotos[3]){
-    document.getElementById("status").innerText = "🔄 Criando montagem final...";
-    setTimeout(() => {
-      createFinalMontage();
-    }, 500);
+  if (!phoneNumber) {
+    alert("Por favor, insira um número de WhatsApp");
+    return;
   }
-}
+  
+  const shareUrl = imgbbUrl || finalImageUrl;
+  const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message + '\n\n' + shareUrl)}`;
+  
+  window.open(whatsappUrl, '_blank');
+};
 
-function createFinalMontage(){
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+// Função para upload no ImgBB
+async function uploadToImgBB(dataURL) {
+  // Converte DataURL para Blob
+  const response = await fetch(dataURL);
+  const blob = await response.blob();
   
-  // Define o tamanho do canvas igual ao template (3375x6000)
-  canvas.width = 3375;
-  canvas.height = 6000;
+  // Cria FormData
+  const formData = new FormData();
+  formData.append('image', blob);
   
-  // Desenha o template de fundo
-  ctx.drawImage(templateImage, 0, 0, canvas.width, canvas.height);
-  
-  let photosDrawn = 0;
-  const totalPhotos = 3;
-  
-  // Para cada foto, desenha na posição definida
-  photoAreas.forEach(area => {
-    const photoIndex = area.number;
-    if(receivedPhotos[photoIndex]){
-      const photoImg = new Image();
-      photoImg.onload = () => {
-        // Desenha a foto redimensionada para caber na área
-        ctx.drawImage(photoImg, area.x, area.y, area.width, area.height);
-        photosDrawn++;
-        
-        // Se todas as fotos foram desenhadas, mostra o resultado
-        if(photosDrawn === totalPhotos){
-          showFinalResult(canvas.toDataURL());
-        }
-      };
-      photoImg.src = receivedPhotos[photoIndex];
-    }
+  // Faz upload (nota: você precisa de uma API key gratuita do ImgBB)
+  const uploadResponse = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+    method: 'POST',
+    body: formData
   });
-}
-
-function showFinalResult(finalDataURL){
-  document.getElementById("status").innerText = "✅ Montagem final pronta!";
-  document.getElementById("finalImage").src = finalDataURL;
-  document.getElementById("finalMontage").style.display = "block";
   
-  // Salva a montagem final para download/compartilhamento
-  window.finalMontageUrl = finalDataURL;
-}
-
-// Download da montagem final
-document.getElementById("downloadFinal").onclick = () => {
-  if(window.finalMontageUrl){
-    const link = document.createElement('a');
-    link.download = `photobooth-${session}.png`;
-    link.href = window.finalMontageUrl;
-    link.click();
+  const result = await uploadResponse.json();
+  
+  if (result.success) {
+    return result.data.url;
+  } else {
+    throw new Error(result.error?.message || 'Upload failed');
   }
-};
-
-// Compartilhar montagem final
-document.getElementById("shareFinal").onclick = () => {
-  if(window.finalMontageUrl){
-    // Cria um link temporário para visualização
-    const viewerUrl = `${location.origin}/visualizador.html?photos=${encodeURIComponent(JSON.stringify([window.finalMontageUrl]))}`;
-    showQR(viewerUrl);
-  }
-};
-
-function openFullscreen(url){
-  document.getElementById("fullscreenImg").src=url;
-  document.getElementById("fullscreenView").style.display="flex";
-}
-function closeFullscreen(){
-  document.getElementById("fullscreenView").style.display="none";
 }
 
-document.getElementById("generateControlUrl").onclick=()=>{
-  const url=location.origin+"/celular.html?session="+session+"&socket="+DEFAULT_SOCKET_SERVER;
-  showQR(url);
-};
-document.getElementById("generateViewerLink").onclick=()=>{
-  const url=location.origin+"/visualizador.html?session="+session+"&socket="+DEFAULT_SOCKET_SERVER;
-  showQR(url);
-};
-document.getElementById("resetBtn").onclick=()=>{
-  location.reload();
-};
+function updateStatus(message, type) {
+  const statusEl = document.getElementById("status");
+  statusEl.textContent = message;
+  statusEl.className = `status ${type}`;
+}
 
-function showQR(url){
+function showQR(url, title = "") {
   const qrDiv = document.getElementById("qrcode");
-  qrDiv.innerHTML = ""; // limpa antes
-  QRCode.toCanvas(document.createElement("canvas"), url, function (err, canvas) {
-    if (!err) qrDiv.appendChild(canvas);
+  qrDiv.innerHTML = `<h3>${title}</h3>`;
+  
+  QRCode.toCanvas(url, { width: 200 }, function(err, canvas) {
+    if (err) {
+      qrDiv.innerHTML += `<p style="color:red">Erro ao gerar QR</p>`;
+      return;
+    }
+    qrDiv.appendChild(canvas);
   });
+  
   const link = document.createElement("p");
   link.innerHTML = `<a href="${url}" target="_blank" style="color:#0bf">${url}</a>`;
   qrDiv.appendChild(link);
