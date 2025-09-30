@@ -1,7 +1,65 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Visualizador</title><style>body{font-family:Arial;padding:16px}img{max-width:95%;margin:8px 0}</style></head>
-<body><h1>Suas Fotos</h1><div id="gallery"></div><script>
-const params=new URLSearchParams(location.search);
-let photos=[];try{photos=JSON.parse(decodeURIComponent(params.get('photos')||'[]'));}catch(e){{}};
-const g=document.getElementById('gallery');if(!photos.length)g.innerHTML='<p>Nenhuma foto.</p>';photos.forEach(u=>{{const i=document.createElement('img');i.src=u;g.appendChild(i);}});
-</script></body></html>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Sua Foto - Cabine Fotográfica</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    margin: 0;
+    padding: 20px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: white;
+  }
+  h1 {
+    margin-bottom: 30px;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+  }
+  img {
+    max-width: 90%;
+    max-height: 70vh;
+    border: 10px solid white;
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  }
+  .loading {
+    font-size: 1.2em;
+    margin: 20px;
+  }
+</style>
+</head>
+<body>
+  <h1>📸 Sua Foto da Cabine</h1>
+  <div id="photoContainer">
+    <div class="loading">Carregando sua foto...</div>
+  </div>
+
+<script>
+  const params = new URLSearchParams(location.search);
+  const photoUrl = params.get('photo');
+  
+  if (photoUrl) {
+    const img = document.createElement('img');
+    img.src = photoUrl;
+    img.onload = () => {
+      document.getElementById('photoContainer').innerHTML = '';
+      document.getElementById('photoContainer').appendChild(img);
+    };
+    img.onerror = () => {
+      document.getElementById('photoContainer').innerHTML = 
+        '<p>Erro ao carregar a foto. O link pode ter expirado.</p>';
+    };
+  } else {
+    document.getElementById('photoContainer').innerHTML = 
+      '<p>Nenhuma foto para exibir.</p>';
+  }
+</script>
+</body>
+</html>
