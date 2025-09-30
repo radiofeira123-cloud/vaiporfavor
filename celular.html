@@ -5,18 +5,69 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Photobooth — Celular</title>
 <style>
-body { font-family: sans-serif; text-align: center; background: #111; color: #fff; }
-video, canvas { width: 100%; max-width: 400px; border: 2px solid #fff; margin: 10px auto; display: block; }
-#status { margin: 20px; font-size: 1.2em; }
-button { font-size: 1.2em; padding: 10px 20px; margin: 10px; }
+body { 
+  font-family: sans-serif; 
+  text-align: center; 
+  background: #111; 
+  color: #fff; 
+  margin: 0;
+  padding: 20px;
+}
+video, canvas { 
+  width: 100%; 
+  max-width: 400px; 
+  border: 2px solid #fff; 
+  margin: 10px auto; 
+  display: block; 
+  border-radius: 10px;
+}
+#status { 
+  margin: 20px; 
+  font-size: 1.2em; 
+  font-weight: bold;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+button { 
+  font-size: 1.2em; 
+  padding: 15px 30px; 
+  margin: 10px; 
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 25px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+button:hover {
+  background: #0056b3;
+  transform: scale(1.05);
+}
+button:disabled {
+  background: #666;
+  cursor: not-allowed;
+  transform: none;
+}
+.countdown {
+  font-size: 3em;
+  font-weight: bold;
+  color: #ffa500;
+  text-shadow: 0 0 10px rgba(255,165,0,0.5);
+}
+.success { 
+  color: #00ff00; 
+  font-size: 1.4em;
+}
 </style>
 </head>
 <body>
-<h2>Cabine Fotográfica — Controle</h2>
+<h2>📸 Cabine Fotográfica</h2>
 <video id="preview" autoplay playsinline></video>
 <canvas id="canvas" style="display:none;"></canvas>
-<div id="status">Conectado. Clique em iniciar sessão.</div>
-<button id="startBtn">Iniciar sessão</button>
+<div id="status">Conectado. Clique em "Iniciar Sessão" para começar!</div>
+<button id="startBtn">Iniciar Sessão</button>
 
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
@@ -29,58 +80,135 @@ let session = new URLSearchParams(window.location.search).get("session");
 let socketURL = new URLSearchParams(window.location.search).get("socket");
 let socket = io(socketURL);
 let localStream;
-let frameImg = new Image();
-frameImg.src = "moldura.png"; // moldura local na raiz
+let isSessionActive = false;
+
+// Verifica se os parâmetros necessários estão presentes
+if(!session || !socketURL) {
+  statusEl.innerHTML = '❌ Erro: Link inválido. Use o QR code gerado no PC.';
+  startBtn.disabled = true;
+}
+
+socket.on('connect', () => {
+  statusEl.innerHTML = '✅ Conectado! Clique em "Iniciar Sessão"';
+});
+
+socket.on('disconnect', () => {
+  statusEl.innerHTML = '❌ Desconectado do servidor';
+});
 
 async function initCamera(){
-  localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
-  video.srcObject = localStream;
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ 
+      video: { 
+        facingMode: "user",
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }, 
+      audio: false 
+    });
+    video.srcObject = localStream;
+  } catch (error) {
+    statusEl.innerHTML = '❌ Erro ao acessar a câmera: ' + error.message;
+    startBtn.disabled = true;
+  }
 }
 
 initCamera();
 
 startBtn.onclick = () => {
-  statusEl.innerText = "Prepare-se!";
+  if(isSessionActive) return;
+  
+  isSessionActive = true;
+  startBtn.disabled = true;
+  startBtn.textContent = "Sessão em Andamento...";
+  statusEl.innerHTML = '🎬 <strong>Prepare-se!</strong> A sessão vai começar...';
+  
   setTimeout(startSequence, 2000);
 };
 
 async function startSequence(){
-  for(let i=1;i<=3;i++){
-    await countdown(3);
-    await takePhoto(i);
-    if(i<3) await delay(3000);
+  try {
+    for(let i=1;i<=3;i++){
+      await countdown(3, i);
+      await takePhoto(i);
+      if(i<3) {
+        statusEl.innerHTML = `📸 Foto ${i} capturada! Próxima em 3 segundos...`;
+        await delay(3000);
+      }
+    }
+    statusEl.innerHTML = '<div class="success">✅ Fotos enviadas com sucesso! Obrigado! 🎉</div>';
+    
+    // Prepara para próxima sessão após 5 segundos
+    setTimeout(() => {
+      isSessionActive = false;
+      startBtn.disabled = false;
+      startBtn.textContent = "Iniciar Sessão";
+      statusEl.innerHTML = '✅ Pronto para nova sessão! Clique em "Iniciar Sessão"';
+    }, 5000);
+    
+  } catch (error) {
+    statusEl.innerHTML = '❌ Erro durante a sessão: ' + error.message;
+    isSessionActive = false;
+    startBtn.disabled = false;
+    startBtn.textContent = "Tentar Novamente";
   }
-  statusEl.innerText = "✔️ Fotos enviadas com sucesso!";
 }
 
-function countdown(sec){
+function countdown(sec, photoNumber){
   return new Promise(resolve=>{
     let c = sec;
-    statusEl.innerText = "Foto em... " + c;
+    statusEl.innerHTML = `<div class="countdown">${c}</div><div>Foto ${photoNumber} em...</div>`;
+    
     let interval = setInterval(()=>{
       c--;
       if(c>0){
-        statusEl.innerText = "Foto em... " + c;
+        statusEl.innerHTML = `<div class="countdown">${c}</div><div>Foto ${photoNumber} em...</div>`;
       } else {
         clearInterval(interval);
-        resolve();
+        statusEl.innerHTML = '<div class="countdown">📸</div><div>Smile!</div>';
+        setTimeout(resolve, 500);
       }
     },1000);
   });
 }
 
 async function takePhoto(i){
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  // Garante que a moldura carregou
-  await new Promise(r=>{ if(frameImg.complete) r(); else frameImg.onload=r; });
-  ctx.drawImage(frameImg, 0, 0, canvas.width, canvas.height);
-  let dataUrl = canvas.toDataURL("image/png");
-  socket.emit("photo",{session:session, img:dataUrl, index:i});
-  statusEl.innerText = "📸 Foto " + i;
+  try {
+    // Configura o canvas com as dimensões do vídeo
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    // Desenha o frame atual do vídeo no canvas
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Converte para DataURL (SEM MOLDURA)
+    let dataUrl = canvas.toDataURL("image/png");
+    
+    // Envia via Socket.io
+    socket.emit("photo", {
+      session: session, 
+      img: dataUrl, 
+      index: i,
+      timestamp: Date.now()
+    });
+    
+    statusEl.innerHTML = `✅ Foto ${i} enviada!`;
+    
+  } catch (error) {
+    console.error('Erro ao tirar foto:', error);
+    throw error;
+  }
 }
-function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+function delay(ms){ 
+  return new Promise(r=>setTimeout(r,ms)); 
+}
+
+// Tratamento de erro global
+window.addEventListener('error', (e) => {
+  console.error('Erro global:', e.error);
+  statusEl.innerHTML = '❌ Ocorreu um erro. Recarregue a página.';
+});
 </script>
 </body>
 </html>
