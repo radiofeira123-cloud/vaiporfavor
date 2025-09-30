@@ -5,99 +5,82 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Photobooth — Celular</title>
 <style>
-  body{font-family:Arial,sans-serif;margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#111;color:#fff;flex-direction:column;text-align:center}
-  button{font-size:24px;padding:20px 40px;margin:10px;border:none;border-radius:8px;cursor:pointer}
-  #count{font-size:64px;margin-top:20px}
-  #status{margin-top:10px;font-size:20px}
-  video{width:100%;max-width:400px;border-radius:8px;margin-top:20px}
+body { font-family: sans-serif; text-align: center; background: #111; color: #fff; }
+video, canvas { width: 100%; max-width: 400px; border: 2px solid #fff; margin: 10px auto; display: block; }
+#status { margin: 20px; font-size: 1.2em; }
+button { font-size: 1.2em; padding: 10px 20px; margin: 10px; }
 </style>
 </head>
 <body>
-  <div id="step1">
-    <button id="fullscreenBtn">Entrar em tela cheia</button>
-  </div>
-  <div id="step2" style="display:none">
-    <button id="startSessionBtn">Iniciar sessão</button>
-  </div>
-  <div id="step3" style="display:none">
-    <div id="count"></div>
-    <div id="status"></div>
-    <video id="video" autoplay playsinline></video>
-    <canvas id="canvas" style="display:none;"></canvas>
-  </div>
+<h2>Cabine Fotográfica — Controle</h2>
+<video id="preview" autoplay playsinline></video>
+<canvas id="canvas" style="display:none;"></canvas>
+<div id="status">Conectado. Clique em iniciar sessão.</div>
+<button id="startBtn">Iniciar sessão</button>
 
-<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
-const DEFAULT_SOCKET_SERVER="https://render-9ea7.onrender.com";
-const params=new URLSearchParams(location.search);
-const session=params.get('session')||('ctrl_'+Date.now());
-const socketServer=(params.get('socket')||DEFAULT_SOCKET_SERVER).replace(/\/$/,'');
-let socket=null;let awaiting=null;
+let video = document.getElementById('preview');
+let canvas = document.getElementById('canvas');
+let ctx = canvas.getContext('2d');
+let statusEl = document.getElementById('status');
+let startBtn = document.getElementById('startBtn');
+let session = new URLSearchParams(window.location.search).get("session");
+let socketURL = new URLSearchParams(window.location.search).get("socket");
+let socket = io(socketURL);
+let localStream;
+let frameImg = new Image();
+frameImg.src = "moldura.png"; // moldura local na raiz
 
-function enterFullscreen(){
-  const el=document.documentElement;
-  if(el.requestFullscreen) el.requestFullscreen();
-  if(screen.orientation&&screen.orientation.lock){
-    screen.orientation.lock('landscape').catch(()=>{});
-  }
+async function initCamera(){
+  localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+  video.srcObject = localStream;
 }
 
-document.getElementById("fullscreenBtn").onclick=()=>{
-  enterFullscreen();
-  document.getElementById("step1").style.display="none";
-  document.getElementById("step2").style.display="block";
+initCamera();
+
+startBtn.onclick = () => {
+  statusEl.innerText = "Prepare-se!";
+  setTimeout(startSequence, 2000);
 };
-
-document.getElementById("startSessionBtn").onclick=()=>{
-  socket=io(socketServer,{transports:["websocket"]});
-  socket.on("connect",()=>{
-    socket.emit("join",{session});
-    document.getElementById("status").innerText="Conectado!";
-    document.getElementById("step2").style.display="none";
-    document.getElementById("step3").style.display="block";
-    startCamera();
-  });
-
-  socket.on("triggerPhoto",()=>{
-    startSequence();
-  });
-};
-
-function startCamera(){
-  const videoEl=document.getElementById("video");
-  navigator.mediaDevices.getUserMedia({ video:true }).then(stream=>{
-    videoEl.srcObject=stream;
-  }).catch(err=>{
-    document.getElementById("status").innerText="Erro ao abrir câmera: "+err;
-  });
-}
 
 async function startSequence(){
-  let count=3;
-  document.getElementById("count").innerText=count;
-  const interval=setInterval(()=>{
-    count--;
-    if(count>0){
-      document.getElementById("count").innerText=count;
-    }else{
-      clearInterval(interval);
-      document.getElementById("count").innerText="";
-      captureAndSend();
-    }
-  },1000);
+  for(let i=1;i<=3;i++){
+    await countdown(3);
+    await takePhoto(i);
+    if(i<3) await delay(3000);
+  }
+  statusEl.innerText = "✔️ Fotos enviadas com sucesso!";
 }
 
-function captureAndSend(){
-  const videoEl=document.getElementById("video");
-  const canvasEl=document.getElementById("canvas");
-  const ctx=canvasEl.getContext("2d");
-  canvasEl.width=videoEl.videoWidth;
-  canvasEl.height=videoEl.videoHeight;
-  ctx.drawImage(videoEl,0,0);
-  const dataURL=canvasEl.toDataURL("image/jpeg");
-  socket.emit("photo",{session,dataURL});
-  document.getElementById("status").innerText="📸 Foto enviada!";
+function countdown(sec){
+  return new Promise(resolve=>{
+    let c = sec;
+    statusEl.innerText = "Foto em... " + c;
+    let interval = setInterval(()=>{
+      c--;
+      if(c>0){
+        statusEl.innerText = "Foto em... " + c;
+      } else {
+        clearInterval(interval);
+        resolve();
+      }
+    },1000);
+  });
 }
+
+async function takePhoto(i){
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  // Garante que a moldura carregou
+  await new Promise(r=>{ if(frameImg.complete) r(); else frameImg.onload=r; });
+  ctx.drawImage(frameImg, 0, 0, canvas.width, canvas.height);
+  let dataUrl = canvas.toDataURL("image/png");
+  socket.emit("photo",{session:session, img:dataUrl, index:i});
+  statusEl.innerText = "📸 Foto " + i;
+}
+function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
 </script>
 </body>
 </html>
