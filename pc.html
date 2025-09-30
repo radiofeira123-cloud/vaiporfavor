@@ -52,7 +52,7 @@
 <div class="controls">
   <button id="generateControlUrl">Gerar QR Code do Celular</button>
   <button id="generateViewerLink" disabled>Gerar Visualizador Online</button>
-  <button id="restartSession" disabled>Reiniciar Sessão</button>
+  <button id="restartSession" disabled>Reiniciar Sessão no Celular</button>
 </div>
 
 <div id="qrcode"></div>
@@ -74,20 +74,30 @@
 <script>
 const DEFAULT_SOCKET_SERVER = "https://render-9ea7.onrender.com";
 const session = 'pc_' + Date.now();
-const IMGBB_API_KEY = "substitua_com_sua_chave_imgbb"; // Você precisa conseguir uma API key gratuita
 
 document.getElementById("session").innerText = session;
 let socket = io(DEFAULT_SOCKET_SERVER, { transports: ["websocket"] });
 let finalImageUrl = null;
-let imgbbUrl = null;
+
+console.log("🖥️ PC iniciado - Sessão:", session);
 
 socket.on("connect", () => {
+  console.log("✅ Conectado ao servidor");
   socket.emit("join", { session });
   updateStatus("Conectado - Aguardando celular...", "waiting");
 });
 
+socket.on("disconnect", () => {
+  console.log("❌ Desconectado do servidor");
+  updateStatus("Desconectado - Tentando reconectar...", "waiting");
+});
+
+// OUVINDO A MENSAGEM DO CELULAR
 socket.on("finalPhoto", (msg) => {
+  console.log("📨 Mensagem recebida:", msg);
+  
   if (msg.session && msg.finalImage) {
+    console.log("✅ Foto final recebida do celular!");
     updateStatus("📸 Foto final recebida!", "receiving");
     
     // Mostra a imagem final
@@ -113,37 +123,26 @@ document.getElementById("generateControlUrl").onclick = () => {
 document.getElementById("generateViewerLink").onclick = async () => {
   if (!finalImageUrl) return;
   
-  updateStatus("⏳ Fazendo upload para nuvem...", "receiving");
+  updateStatus("⏳ Gerando link de visualização...", "receiving");
   
   try {
-    // Faz upload para ImgBB
-    imgbbUrl = await uploadToImgBB(finalImageUrl);
+    // Usa DataURL diretamente
+    const viewerUrl = `${location.origin}/visualizador.html?photo=${encodeURIComponent(finalImageUrl)}`;
     
-    // Gera link do visualizador
-    const viewerUrl = `${location.origin}/visualizador.html?photo=${encodeURIComponent(imgbbUrl)}`;
-    
-    updateStatus("✅ Upload concluído!", "ready");
+    updateStatus("✅ Link gerado!", "ready");
     showQR(viewerUrl, "Visualizador Online");
     
   } catch (error) {
-    updateStatus("❌ Erro no upload: " + error.message, "waiting");
-    console.error("Upload error:", error);
-    
-    // Fallback: usa DataURL diretamente (menos ideal)
-    const viewerUrl = `${location.origin}/visualizador.html?photo=${encodeURIComponent(finalImageUrl)}`;
-    showQR(viewerUrl, "Visualizador Online (Fallback)");
+    updateStatus("❌ Erro: " + error.message, "waiting");
+    console.error("Error:", error);
   }
 };
 
-// Reiniciar sessão
+// Reiniciar sessão no celular
 document.getElementById("restartSession").onclick = () => {
+  console.log("🔄 Enviando comando para reiniciar sessão no celular");
   socket.emit("restartSession", { session });
-  document.getElementById("finalMontage").style.display = "none";
-  document.getElementById("generateViewerLink").disabled = true;
-  document.getElementById("restartSession").disabled = true;
-  finalImageUrl = null;
-  imgbbUrl = null;
-  updateStatus("Aguardando nova sessão...", "waiting");
+  updateStatus("Comando enviado - Celular reiniciando...", "waiting");
 };
 
 // Enviar WhatsApp
@@ -156,36 +155,11 @@ document.getElementById("sendWhatsApp").onclick = () => {
     return;
   }
   
-  const shareUrl = imgbbUrl || finalImageUrl;
+  const shareUrl = finalImageUrl;
   const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message + '\n\n' + shareUrl)}`;
   
   window.open(whatsappUrl, '_blank');
 };
-
-// Função para upload no ImgBB
-async function uploadToImgBB(dataURL) {
-  // Converte DataURL para Blob
-  const response = await fetch(dataURL);
-  const blob = await response.blob();
-  
-  // Cria FormData
-  const formData = new FormData();
-  formData.append('image', blob);
-  
-  // Faz upload (nota: você precisa de uma API key gratuita do ImgBB)
-  const uploadResponse = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-    method: 'POST',
-    body: formData
-  });
-  
-  const result = await uploadResponse.json();
-  
-  if (result.success) {
-    return result.data.url;
-  } else {
-    throw new Error(result.error?.message || 'Upload failed');
-  }
-}
 
 function updateStatus(message, type) {
   const statusEl = document.getElementById("status");
