@@ -13,7 +13,7 @@
 </head>
 <body>
   <h1>Cabine de Fotos - Operador</h1>
-  <div id="sessionId"></div> <!-- Mostra o número da sessão -->
+  <div id="sessionId"></div> <!-- Número da sessão aparece aqui -->
   <div id="photos"></div>
   <div>
     <button onclick="generateQrCabine()">Gerar QR Inicial (Cabine)</button>
@@ -28,18 +28,8 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
   <script>
     const socket = io();
-    var sessionId = gerarSessionId();
+    let sessionId;
     let photos = [];
-
-    atualizarSessionId();
-
-    socket.on('final_photo', data => {
-      if (data.sessionId !== sessionId) return;
-      photos.push(data.photo);
-      const img = document.createElement('img');
-      img.src = data.photo;
-      document.getElementById('photos').appendChild(img);
-    });
 
     function gerarSessionId() {
       // Exemplo: 20251001-1234 (data + 4 dígitos aleatórios)
@@ -52,6 +42,20 @@
     function atualizarSessionId() {
       document.getElementById('sessionId').innerText = "Sessão: " + sessionId;
     }
+
+    // Inicializa quando a página abre
+    window.onload = () => {
+      sessionId = gerarSessionId();
+      atualizarSessionId();
+    };
+
+    socket.on('final_photo', data => {
+      if (data.sessionId !== sessionId) return;
+      photos.push(data.photo);
+      const img = document.createElement('img');
+      img.src = data.photo;
+      document.getElementById('photos').appendChild(img);
+    });
 
     function generateQrCabine() {
       const cabineUrl = window.location.origin + "/celular.html?session=" + sessionId;
