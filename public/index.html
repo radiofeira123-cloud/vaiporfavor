@@ -2,53 +2,110 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Cabine de Fotos - PC</title>
+  <title>Cabine de Fotos - Operador</title>
   <style>
-    body { background:#111; color:white; font-family:Arial; text-align:center; }
-    #photos img { max-width:200px; margin:10px; }
-    #finalMontage img { max-width:400px; display:block; margin:auto; }
-    button { padding:10px 20px; margin:10px; font-size:16px; cursor:pointer; }
-    #sessionId { margin: 20px; font-size: 18px; color: #0f0; font-weight: bold; }
+    body {
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+    #sessionId {
+      margin: 20px;
+      font-size: 18px;
+      color: #0f0;
+      font-weight: bold;
+    }
+    #photos img {
+      max-width: 200px;
+      margin: 10px;
+      border-radius: 10px;
+      border: 2px solid #444;
+    }
+    #finalMontage img {
+      max-width: 400px;
+      display: block;
+      margin: 20px auto;
+      border-radius: 15px;
+      border: 2px solid #0f0;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 8px;
+      border: none;
+      background-color: #222;
+      color: #fff;
+      transition: 0.2s;
+    }
+    button:hover {
+      background-color: #0f0;
+      color: #000;
+    }
+    #qrcode {
+      margin: 20px auto;
+    }
   </style>
 </head>
 <body>
   <h1>Cabine de Fotos - Operador</h1>
-  <div id="sessionId"></div> <!-- Número da sessão aparece aqui -->
+  <div id="sessionId">Sessão: ...</div>
+
   <div id="photos"></div>
+
   <div>
     <button onclick="generateQrCabine()">Gerar QR Inicial (Cabine)</button>
     <button onclick="createImprimir()">Gerar Imprimir.png</button>
     <button onclick="createDigitalAndQR()">Gerar Digital + QR</button>
     <button onclick="finalizarSessao()">Finalizar Sessão</button>
   </div>
+
   <div id="finalMontage"></div>
   <div id="qrcode"></div>
 
+  <!-- Socket.io -->
   <script src="/socket.io/socket.io.js"></script>
+  <!-- QR Code -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+
   <script>
+    // ===========================
+    // Variáveis globais
+    // ===========================
     const socket = io();
     let sessionId;
     let photos = [];
 
+    // ===========================
+    // Função para gerar sessionId
+    // ===========================
     function gerarSessionId() {
-      // Exemplo: 20251001-1234 (data + 4 dígitos aleatórios)
       const agora = new Date();
       const dataStr = agora.toISOString().slice(0,10).replace(/-/g,""); 
       const rand = Math.floor(1000 + Math.random() * 9000);
       return `${dataStr}-${rand}`;
     }
 
+    // ===========================
+    // Atualiza a sessão na tela
+    // ===========================
     function atualizarSessionId() {
       document.getElementById('sessionId').innerText = "Sessão: " + sessionId;
     }
 
-    // Inicializa quando a página abre
+    // ===========================
+    // Inicializa a página
+    // ===========================
     window.onload = () => {
       sessionId = gerarSessionId();
       atualizarSessionId();
     };
 
+    // ===========================
+    // Recebe fotos do celular via socket.io
+    // ===========================
     socket.on('final_photo', data => {
       if (data.sessionId !== sessionId) return;
       photos.push(data.photo);
@@ -57,27 +114,38 @@
       document.getElementById('photos').appendChild(img);
     });
 
+    // ===========================
+    // Gerar QR code inicial (Cabine)
+    // ===========================
     function generateQrCabine() {
       const cabineUrl = window.location.origin + "/celular.html?session=" + sessionId;
       QRCode.toCanvas(cabineUrl, { width: 200 }, (err, canvas) => {
         if (!err) {
-          document.getElementById('qrcode').innerHTML = "";
-          document.getElementById('qrcode').appendChild(canvas);
+          const qrcodeDiv = document.getElementById('qrcode');
+          qrcodeDiv.innerHTML = "";
+          qrcodeDiv.appendChild(canvas);
         }
       });
     }
 
+    // ===========================
+    // Criar Imprimir.png com moldura
+    // ===========================
     function createImprimir() {
       if (photos.length < 3) { alert("Fotos insuficientes!"); return; }
+
       const canvas = document.createElement('canvas');
-      canvas.width = 3322; canvas.height = 4798;
+      canvas.width = 3322;
+      canvas.height = 4798;
       const ctx = canvas.getContext('2d');
 
+      // Carrega moldura como fundo
       const bg = new Image();
-      bg.src = "moldura.png"; // fundo fixo
+      bg.src = "moldura.png";
       bg.onload = () => {
         ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
 
+        // Coordenadas das fotos na moldura
         const coords = [
           [152, 150, 2214, 1428],
           [150, 1687, 2216, 1437],
@@ -91,6 +159,7 @@
           img.onload = () => {
             ctx.drawImage(img, coords[i][0], coords[i][1], coords[i][2], coords[i][3]);
             carregadas++;
+            // Quando todas carregarem, finaliza o canvas
             if (carregadas === photos.length) finalizarCanvas(canvas);
           };
         });
@@ -99,28 +168,39 @@
 
     function finalizarCanvas(canvas) {
       const dataUrl = canvas.toDataURL('image/png');
+
+      // Baixar imagem
       const link = document.createElement("a");
       link.href = dataUrl;
       link.download = "imprimir.png";
       link.click();
 
+      // Mostrar na tela
       const img = new Image();
       img.src = dataUrl;
-      document.getElementById('finalMontage').innerHTML = "";
-      document.getElementById('finalMontage').appendChild(img);
+      const finalDiv = document.getElementById('finalMontage');
+      finalDiv.innerHTML = "";
+      finalDiv.appendChild(img);
     }
 
+    // ===========================
+    // Gerar Digital + QR
+    // ===========================
     function createDigitalAndQR() {
       if (photos.length < 3) { alert("Fotos insuficientes!"); return; }
       const url = window.location.origin + "/visualizador.html?session=" + sessionId;
-      QRCode.toCanvas(url, { width:200 }, (err, canvas) => {
+      QRCode.toCanvas(url, { width: 200 }, (err, canvas) => {
         if (!err) {
-          document.getElementById('qrcode').innerHTML="";
-          document.getElementById('qrcode').appendChild(canvas);
+          const qrcodeDiv = document.getElementById('qrcode');
+          qrcodeDiv.innerHTML = "";
+          qrcodeDiv.appendChild(canvas);
         }
       });
     }
 
+    // ===========================
+    // Finalizar sessão
+    // ===========================
     function finalizarSessao() {
       socket.emit("finalizar_sessao", sessionId);
       photos = [];
