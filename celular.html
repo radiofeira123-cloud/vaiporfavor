@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Cabine Fotográfica - Celular</title>
+  <style>
+    body, html { margin:0; padding:0; background:black; color:white; font-family:sans-serif; text-align:center; height:100%; overflow:hidden; }
+    #preview, #frozenPreview { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; }
+    #countdown { position:absolute; top:20px; left:0; right:0; font-size:80px; font-weight:bold; }
+    #message { position:absolute; bottom:20%; left:0; right:0; font-size:60px; }
+    #thanks { display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:black; color:white; display:flex; justify-content:center; align-items:center; font-size:50px; }
+  </style>
+</head>
+<body>
+  <video id="preview" autoplay playsinline></video>
+  <canvas id="frozenPreview"></canvas>
+  <div id="countdown"></div>
+  <div id="message"></div>
+  <div id="thanks">Obrigado por usar a cabine 🎉</div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const video = document.getElementById('preview');
+    const frozen = document.getElementById('frozenPreview');
+    const countdown = document.getElementById('countdown');
+    const message = document.getElementById('message');
+    const thanks = document.getElementById('thanks');
+    const socket = io();
+
+    let ctx = frozen.getContext('2d');
+    frozen.style.display = 'none';
+
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => video.srcObject = stream);
+
+    const shutter = new Audio("clack.mp3");
+
+    async function takePhotoSequence() {
+      let photos = [];
+      for (let i=0; i<3; i++) {
+        await countdownAndCapture(i+1, photos);
+      }
+      // terminou -> mostra obrigado
+      video.style.display = 'none';
+      frozen.style.display = 'none';
+      countdown.innerText = "";
+      message.innerText = "";
+      thanks.style.display = 'flex';
+    }
+
+    function countdownAndCapture(index, photos) {
+      return new Promise(resolve=>{
+        let count = 5;
+        countdown.innerText = count;
+        message.innerText = "";
+        let timer = setInterval(()=>{
+          count--;
+          countdown.innerText = count > 0 ? count : "";
+          if (count === 2) shutter.play();
+          if (count === 1) message.innerText = "SORRIA 📸";
+          if (count === 0) {
+            clearInterval(timer);
+            capturePhoto(index, photos);
+            resolve();
+          }
+        }, 1000);
+      });
+    }
+
+    function capturePhoto(index, photos) {
+      frozen.width = video.videoWidth;
+      frozen.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, frozen.width, frozen.height);
+      frozen.style.display = 'block';
+      video.style.display = 'none';
+
+      let data = frozen.toDataURL("image/png");
+      photos.push(data);
+      socket.emit("final_photo", { index, data });
+
+      setTimeout(()=>{
+        frozen.style.display = 'none';
+        video.style.display = 'block';
+        message.innerText = "";
+      }, 3000);
+    }
+
+    takePhotoSequence();
+  </script>
+</body>
+</html>
