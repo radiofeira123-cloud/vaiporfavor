@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Visualizador - Cabine</title>
+  <style>
+    body { background:black; color:white; text-align:center; font-family:Arial; }
+    img { max-width:90%; margin:20px auto; display:block; }
+  </style>
+</head>
+<body>
+  <h1>Suas Fotos 🎉</h1>
+  <div id="gallery"></div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get("session");
+
+    // aqui em versão simples, puxando do localStorage do PC
+    const fotos = JSON.parse(localStorage.getItem("photos_" + sessionId) || "[]");
+
+    const gallery = document.getElementById("gallery");
+    fotos.forEach(src => {
+      const img = document.createElement("img");
+      img.src = src;
+      gallery.appendChild(img);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Cabine de Fotos - PC</title>
+  <style>
+    body { background:#111; color:white; font-family:Arial; text-align:center; }
+    #photos img { max-width:200px; margin:10px; }
+    #finalMontage img { max-width:400px; display:block; margin:auto; }
+    button { padding:10px 20px; margin:10px; font-size:16px; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <h1>Cabine de Fotos - Operador</h1>
+  <div id="photos"></div>
+  <div>
+    <button onclick="generateQrCabine()">Gerar QR Inicial (Cabine)</button>
+    <button onclick="createImprimir()">Gerar Imprimir.png</button>
+    <button onclick="createDigitalAndQR()">Gerar Digital + QR</button>
+    <button onclick="finalizarSessao()">Finalizar Sessão</button>
+  </div>
+  <div id="finalMontage"></div>
+  <div id="qrcode"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <script>
+    const socket = io();
+    let photos = [];
+    let sessionId = Date.now().toString();
+
+    socket.on('final_photo', data => {
+      photos.push(data.photo);
+      const img = document.createElement('img');
+      img.src = data.photo;
+      document.getElementById('photos').appendChild(img);
+    });
+
+    function generateQrCabine() {
+      const cabineUrl = window.location.origin + "/celular.html?session=" + sessionId;
+      QRCode.toCanvas(cabineUrl, { width: 200 }, (err, canvas) => {
+        if (!err) document.getElementById('qrcode').appendChild(canvas);
+      });
+    }
+
+    function createImprimir() {
+      if (photos.length < 3) { alert("Fotos insuficientes!"); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = 3322; canvas.height = 4798;
+      const ctx = canvas.getContext('2d');
+
+      const coords = [
+        [152, 150, 2214, 1428],
+        [150, 1687, 2216, 1437],
+        [150, 3235, 2216, 1435]
+      ];
+      photos.forEach((p, i) => {
+        const img = new Image();
+        img.src = p;
+        img.onload = () => { ctx.drawImage(img, coords[i][0], coords[i][1], coords[i][2], coords[i][3]); };
+      });
+
+      setTimeout(() => {
+        const dataUrl = canvas.toDataURL('image/png');
+        const img = new Image();
+        img.src = dataUrl;
+        document.getElementById('finalMontage').innerHTML = "";
+        document.getElementById('finalMontage').appendChild(img);
+      }, 1000);
+    }
+
+    function createDigitalAndQR() {
+      if (photos.length < 3) { alert("Fotos insuficientes!"); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = 1920; canvas.height = 1080;
+      const ctx = canvas.getContext('2d');
+
+      const bg = new Image();
+      bg.src = "caralho.png";
+      bg.onload = () => {
+        ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+        let x = 100, y = 100, w = 500, h = 300;
+        photos.forEach((p,i) => {
+          const img = new Image();
+          img.src = p;
+          img.onload = () => { ctx.drawImage(img, x, y + i*h+20, w, h); };
+        });
+        setTimeout(() => {
+          const dataUrl = canvas.toDataURL('image/png');
+          const img = new Image();
+          img.src = dataUrl;
+          document.getElementById('finalMontage').innerHTML = "";
+          document.getElementById('finalMontage').appendChild(img);
+
+          const url = window.location.origin + "/visualizador.html?session=" + sessionId;
+          QRCode.toCanvas(url, { width:200 }, (err, canvas) => {
+            if (!err) {
+              document.getElementById('qrcode').innerHTML="";
+              document.getElementById('qrcode').appendChild(canvas);
+            }
+          });
+        }, 1000);
+      };
+    }
+
+    function finalizarSessao() {
+      photos = [];
+      sessionId = Date.now().toString();
+      document.getElementById('photos').innerHTML = "";
+      document.getElementById('finalMontage').innerHTML = "";
+      document.getElementById('qrcode').innerHTML = "";
+      alert("Sessão finalizada. Sistema reiniciado.");
+    }
+  </script>
+</body>
+</html>
