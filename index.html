@@ -2,102 +2,114 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Cabine Fotográfica - PC</title>
+  <title>Cabine de Fotos - PC</title>
   <style>
-    body { font-family: sans-serif; text-align: center; }
-    #photos img { max-width: 200px; margin: 5px; border:2px solid #333; }
-    #finalMontage img { max-width: 500px; display:block; margin:10px auto; }
+    body { background:#111; color:white; font-family:Arial; text-align:center; }
+    #photos img { max-width:200px; margin:10px; }
+    #finalMontage img { max-width:400px; display:block; margin:auto; }
+    button { padding:10px 20px; margin:10px; font-size:16px; cursor:pointer; }
   </style>
 </head>
 <body>
-  <h1>Cabine - Operador PC</h1>
+  <h1>Cabine de Fotos - Operador</h1>
   <div id="photos"></div>
-  <button onclick="generateImprimir()">Gerar Imprimir</button>
-  <button onclick="generateDigital()">Gerar Digital + QR</button>
+  <div>
+    <button onclick="generateQrCabine()">Gerar QR Inicial (Cabine)</button>
+    <button onclick="createImprimir()">Gerar Imprimir.png</button>
+    <button onclick="createDigitalAndQR()">Gerar Digital + QR</button>
+    <button onclick="finalizarSessao()">Finalizar Sessão</button>
+  </div>
   <div id="finalMontage"></div>
   <div id="qrcode"></div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
   <script>
     const socket = io();
     let photos = [];
-    const photosDiv = document.getElementById('photos');
-    const montageDiv = document.getElementById('finalMontage');
-    const qrDiv = document.getElementById('qrcode');
+    let sessionId = Date.now().toString();
 
-    socket.on("final_photo", data=>{
-      photos[data.index-1] = data.data;
-      renderPhotos();
+    socket.on('final_photo', data => {
+      photos.push(data.photo);
+      const img = document.createElement('img');
+      img.src = data.photo;
+      document.getElementById('photos').appendChild(img);
     });
 
-    function renderPhotos(){
-      photosDiv.innerHTML = "";
-      photos.forEach(p=>{
-        if (p) {
-          let img = document.createElement("img");
-          img.src = p;
-          photosDiv.appendChild(img);
-        }
+    function generateQrCabine() {
+      const cabineUrl = window.location.origin + "/celular.html?session=" + sessionId;
+      QRCode.toCanvas(cabineUrl, { width: 200 }, (err, canvas) => {
+        if (!err) document.getElementById('qrcode').appendChild(canvas);
       });
     }
 
-    async function generateImprimir(){
-      if (photos.length<3) return alert("Ainda não tem 3 fotos");
-      const canvas = document.createElement("canvas");
+    function createImprimir() {
+      if (photos.length < 3) { alert("Fotos insuficientes!"); return; }
+      const canvas = document.createElement('canvas');
       canvas.width = 3322; canvas.height = 4798;
-      const ctx = canvas.getContext("2d");
+      const ctx = canvas.getContext('2d');
 
-      const imgs = await Promise.all(photos.map(loadImg));
-      ctx.drawImage(imgs[0], 152,150,2214,1428);
-      ctx.drawImage(imgs[1], 150,1687,2216,1437);
-      ctx.drawImage(imgs[2], 150,3235,2216,1435);
-
-      let data = canvas.toDataURL("image/png");
-      montageDiv.innerHTML = `<h3>Imprimir.png</h3><img src="${data}">`;
-      download(data,"imprimir.png");
-    }
-
-    async function generateDigital(){
-      if (photos.length<3) return alert("Ainda não tem 3 fotos");
-      const canvas = document.createElement("canvas");
-      canvas.width = 1920; canvas.height = 1080;
-      const ctx = canvas.getContext("2d");
-
-      const bg = await loadImg("caralho.png");
-      ctx.drawImage(bg,0,0,canvas.width,canvas.height);
-
-      const imgs = await Promise.all(photos.map(loadImg));
-      const thumbW=300, thumbH=200;
-      imgs.forEach((img,i)=>{
-        ctx.drawImage(img, 100+i*(thumbW+20), 800, thumbW, thumbH);
-      });
-
-      let data = canvas.toDataURL("image/png");
-      montageDiv.innerHTML = `<h3>Digital.png</h3><img src="${data}">`;
-
-      // cria sessionId e link
-      const sessionId = "sess"+Date.now();
-      localStorage.setItem(sessionId, JSON.stringify({photos, digital:data}));
-
-      const url = window.location.origin+"/visualizador.html?session="+sessionId;
-      qrDiv.innerHTML = "";
-      new QRCode(qrDiv, url);
-    }
-
-    function loadImg(src){
-      return new Promise(res=>{
+      const coords = [
+        [152, 150, 2214, 1428],
+        [150, 1687, 2216, 1437],
+        [150, 3235, 2216, 1435]
+      ];
+      photos.forEach((p, i) => {
         const img = new Image();
-        img.onload=()=>res(img);
-        img.src=src;
+        img.src = p;
+        img.onload = () => { ctx.drawImage(img, coords[i][0], coords[i][1], coords[i][2], coords[i][3]); };
       });
+
+      setTimeout(() => {
+        const dataUrl = canvas.toDataURL('image/png');
+        const img = new Image();
+        img.src = dataUrl;
+        document.getElementById('finalMontage').innerHTML = "";
+        document.getElementById('finalMontage').appendChild(img);
+      }, 1000);
     }
 
-    function download(data,filename){
-      const a = document.createElement("a");
-      a.href = data;
-      a.download = filename;
-      a.click();
+    function createDigitalAndQR() {
+      if (photos.length < 3) { alert("Fotos insuficientes!"); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = 1920; canvas.height = 1080;
+      const ctx = canvas.getContext('2d');
+
+      const bg = new Image();
+      bg.src = "caralho.png";
+      bg.onload = () => {
+        ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+        let x = 100, y = 100, w = 500, h = 300;
+        photos.forEach((p,i) => {
+          const img = new Image();
+          img.src = p;
+          img.onload = () => { ctx.drawImage(img, x, y + i*h+20, w, h); };
+        });
+        setTimeout(() => {
+          const dataUrl = canvas.toDataURL('image/png');
+          const img = new Image();
+          img.src = dataUrl;
+          document.getElementById('finalMontage').innerHTML = "";
+          document.getElementById('finalMontage').appendChild(img);
+
+          const url = window.location.origin + "/visualizador.html?session=" + sessionId;
+          QRCode.toCanvas(url, { width:200 }, (err, canvas) => {
+            if (!err) {
+              document.getElementById('qrcode').innerHTML="";
+              document.getElementById('qrcode').appendChild(canvas);
+            }
+          });
+        }, 1000);
+      };
+    }
+
+    function finalizarSessao() {
+      photos = [];
+      sessionId = Date.now().toString();
+      document.getElementById('photos').innerHTML = "";
+      document.getElementById('finalMontage').innerHTML = "";
+      document.getElementById('qrcode').innerHTML = "";
+      alert("Sessão finalizada. Sistema reiniciado.");
     }
   </script>
 </body>
