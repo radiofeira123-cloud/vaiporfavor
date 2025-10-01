@@ -16,15 +16,19 @@
     const urlParams = new URLSearchParams(window.location.search);
     const sessionId = urlParams.get("session");
 
-    // aqui em versão simples, puxando do localStorage do PC
-    const fotos = JSON.parse(localStorage.getItem("photos_" + sessionId) || "[]");
-
-    const gallery = document.getElementById("gallery");
-    fotos.forEach(src => {
-      const img = document.createElement("img");
-      img.src = src;
-      gallery.appendChild(img);
-    });
+    fetch("/api/session/" + sessionId)
+      .then(res => res.json())
+      .then(data => {
+        const gallery = document.getElementById("gallery");
+        data.photos.forEach(src => {
+          const img = document.createElement("img");
+          img.src = src;
+          gallery.appendChild(img);
+        });
+      })
+      .catch(() => {
+        document.getElementById("gallery").innerHTML = "<p>Sessão não encontrada</p>";
+      });
   </script>
 </body>
 </html>
