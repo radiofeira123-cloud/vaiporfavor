@@ -31,7 +31,9 @@
     const thankyouEl = document.getElementById('thankyou');
     const clack = document.getElementById('clack');
 
-    let photoCount = 0;
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get("session") || Date.now().toString();
+
     let totalPhotos = 3;
 
     navigator.mediaDevices.getUserMedia({ video: true })
@@ -72,7 +74,7 @@
       frozenPreview.style.display = "block";
 
       const dataUrl = frozenPreview.toDataURL('image/png');
-      socket.emit('final_photo', { photo: dataUrl });
+      socket.emit('final_photo', { sessionId, photo: dataUrl });
 
       setTimeout(() => { frozenPreview.style.display = "none"; }, 3000);
     }
@@ -87,7 +89,6 @@
       thankyouEl.style.display = "block";
     }
 
-    // inicia
     takePhotoSequence();
   </script>
 </body>
