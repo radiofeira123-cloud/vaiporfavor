@@ -8,10 +8,12 @@
     #photos img { max-width:200px; margin:10px; }
     #finalMontage img { max-width:400px; display:block; margin:auto; }
     button { padding:10px 20px; margin:10px; font-size:16px; cursor:pointer; }
+    #sessionId { margin: 20px; font-size: 18px; color: #0f0; font-weight: bold; }
   </style>
 </head>
 <body>
   <h1>Cabine de Fotos - Operador</h1>
+  <div id="sessionId"></div> <!-- Mostra o número da sessão -->
   <div id="photos"></div>
   <div>
     <button onclick="generateQrCabine()">Gerar QR Inicial (Cabine)</button>
@@ -26,8 +28,10 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
   <script>
     const socket = io();
-    var sessionId = Date.now().toString();
+    var sessionId = gerarSessionId();
     let photos = [];
+
+    atualizarSessionId();
 
     socket.on('final_photo', data => {
       if (data.sessionId !== sessionId) return;
@@ -36,6 +40,18 @@
       img.src = data.photo;
       document.getElementById('photos').appendChild(img);
     });
+
+    function gerarSessionId() {
+      // Exemplo: 20251001-1234 (data + 4 dígitos aleatórios)
+      const agora = new Date();
+      const dataStr = agora.toISOString().slice(0,10).replace(/-/g,""); 
+      const rand = Math.floor(1000 + Math.random() * 9000);
+      return `${dataStr}-${rand}`;
+    }
+
+    function atualizarSessionId() {
+      document.getElementById('sessionId').innerText = "Sessão: " + sessionId;
+    }
 
     function generateQrCabine() {
       const cabineUrl = window.location.origin + "/celular.html?session=" + sessionId;
@@ -53,29 +69,41 @@
       canvas.width = 3322; canvas.height = 4798;
       const ctx = canvas.getContext('2d');
 
-      const coords = [
-        [152, 150, 2214, 1428],
-        [150, 1687, 2216, 1437],
-        [150, 3235, 2216, 1435]
-      ];
-      photos.forEach((p, i) => {
-        const img = new Image();
-        img.src = p;
-        img.onload = () => { ctx.drawImage(img, coords[i][0], coords[i][1], coords[i][2], coords[i][3]); };
-      });
+      const bg = new Image();
+      bg.src = "moldura.png"; // fundo fixo
+      bg.onload = () => {
+        ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
 
-      setTimeout(() => {
-        const dataUrl = canvas.toDataURL('image/png');
-        const link = document.createElement("a");
-        link.href = dataUrl;
-        link.download = "imprimir.png";
-        link.click();
+        const coords = [
+          [152, 150, 2214, 1428],
+          [150, 1687, 2216, 1437],
+          [150, 3235, 2216, 1435]
+        ];
 
-        const img = new Image();
-        img.src = dataUrl;
-        document.getElementById('finalMontage').innerHTML = "";
-        document.getElementById('finalMontage').appendChild(img);
-      }, 1000);
+        let carregadas = 0;
+        photos.forEach((p, i) => {
+          const img = new Image();
+          img.src = p;
+          img.onload = () => {
+            ctx.drawImage(img, coords[i][0], coords[i][1], coords[i][2], coords[i][3]);
+            carregadas++;
+            if (carregadas === photos.length) finalizarCanvas(canvas);
+          };
+        });
+      };
+    }
+
+    function finalizarCanvas(canvas) {
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = "imprimir.png";
+      link.click();
+
+      const img = new Image();
+      img.src = dataUrl;
+      document.getElementById('finalMontage').innerHTML = "";
+      document.getElementById('finalMontage').appendChild(img);
     }
 
     function createDigitalAndQR() {
@@ -92,7 +120,8 @@
     function finalizarSessao() {
       socket.emit("finalizar_sessao", sessionId);
       photos = [];
-      sessionId = Date.now().toString();
+      sessionId = gerarSessionId();
+      atualizarSessionId();
       document.getElementById('photos').innerHTML = "";
       document.getElementById('finalMontage').innerHTML = "";
       document.getElementById('qrcode').innerHTML = "";
