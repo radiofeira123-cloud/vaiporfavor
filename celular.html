@@ -383,29 +383,18 @@ async function startPhotoSession() {
   }
 }
 
-async 
+// === FUNÇÃO takePhotoSequence CORRIGIDA PARA O FLUXO SOLICITADO ===
 async function takePhotoSequence() {
   photos = [];
 
-  const shutter = document.getElementById('shutterAudio') || new Audio('clack.mp3');
   const freezeDiv = document.getElementById('freezePreview');
   const freezeImg = document.getElementById('freezeImg');
 
   for (let i = 1; i <= 3; i++) {
     photoCounterEl.textContent = `Foto ${i} de 3`;
 
-    // Contagem regressiva iniciando em 5 (5,4,3,2 + SORRIA 3s)
+    // Contagem regressiva: mostra 5..2 (1s cada). Em seguida mostra "SORRIA 📸", toca o áudio e espera 2s.
     await countdown(5);
-
-    // Toca som de shutter (pouco antes da captura)
-    try {
-      if (shutter && shutter.play) {
-        shutter.currentTime = 0;
-        await shutter.play().catch(()=>{});
-      }
-    } catch (err) {
-      console.warn('Erro ao tocar shutter:', err);
-    }
 
     // Captura foto (preenche photos[i])
     await takePhoto(i);
@@ -442,6 +431,8 @@ async function takePhotoSequence() {
   try {
     if (typeof createMontage === 'function') {
       await createMontage();
+    } else if (typeof createFinalMontage === 'function') {
+      await createFinalMontage();
     } else {
       console.warn('createMontage não encontrada - finalize remotamente.');
     }
@@ -451,9 +442,8 @@ async function takePhotoSequence() {
 }
 
 
-
 function countdown(seconds) {
-  // Countdown: show numbers from `seconds` down to 2, then show "SORRIA 📸" for 3s.
+  // Countdown: show numbers from `seconds` down to 2, then show "SORRIA 📸", play sound and wait 2s.
   return new Promise(async (resolve) => {
     try {
       const el = document.getElementById('countdown');
@@ -465,11 +455,23 @@ function countdown(seconds) {
         el.style.fontSize = (Math.max(48, Math.floor(window.innerWidth / 6))) + 'px';
         await delay(1000);
       }
-      // show SORRIA for 3 seconds
+      // show SORRIA and play audio, wait 2 seconds
       el.textContent = 'SORRIA 📸';
       el.style.fontSize = (Math.max(48, Math.floor(window.innerWidth / 8))) + 'px';
       el.style.fontWeight = '900';
-      await delay(3000);
+      
+      // play shutter sound exactly on SORRIA
+      try {
+        const shutter = document.getElementById('shutterAudio') || new Audio('clack.mp3');
+        if (shutter && shutter.play) {
+          shutter.currentTime = 0;
+          await shutter.play().catch(()=>{});
+        }
+      } catch (playErr) {
+        console.warn('Erro ao tocar áudio no countdown:', playErr);
+      }
+      
+      await delay(2000);
       el.classList.add('hidden');
       resolve();
     } catch (err) {
@@ -542,6 +544,13 @@ async function createFinalMontage() {
               }
             };
             img.src = photos[area.number];
+          } else {
+            // Se a foto não existe, ainda incrementa contador para não travar
+            loadedPhotos++;
+            if (loadedPhotos === totalPhotos) {
+              finalizeMontage();
+              resolve();
+            }
           }
         });
       } else {
@@ -585,14 +594,20 @@ async function createFinalMontage() {
   });
 }
 
+// alias para compatibilidade: createMontage()
+async function createMontage() {
+  return await createFinalMontage();
+}
+
 function showResult() {
   cameraScreen.style.display = 'none';
   resultScreen.style.display = 'flex';
   
-  // Após 10 segundos, mostra apenas "obrigado"
+  // Após 10 segundos, mostra apenas "obrigado" (oculta título e imagem)
   setTimeout(() => {
     document.querySelector('#resultScreen h1').style.display = 'none';
     finalImageEl.style.display = 'none';
+    // Mantemos .thankYou visível até o operador finalizar sessão no PC
   }, 10000);
 }
 
