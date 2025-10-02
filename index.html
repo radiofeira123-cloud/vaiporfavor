@@ -22,7 +22,7 @@
   <div id="finalMontage"></div>
   <div id="qrcode"></div>
 
-  <!-- Scripts com paths corrigidos -->
+  <!-- Scripts -->
   <script src="/assets/socket.io.js"></script>
   <script src="/assets/qrcode.min.js"></script>
   <script>
@@ -31,7 +31,6 @@
     const socket = io();
     let photos = [];
 
-    // Receber fotos do celular
     socket.on('final_photo', data => {
       if (data.sessionId !== sessionId) return;
       photos.push(data.photo);
@@ -56,7 +55,6 @@
       canvas.width = 3322; canvas.height = 4798;
       const ctx = canvas.getContext('2d');
 
-      // Fundo moldura
       const bg = new Image();
       bg.src = "/assets/moldura.png";
       bg.onload = () => {
